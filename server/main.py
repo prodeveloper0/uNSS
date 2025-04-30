@@ -1,0 +1,56 @@
+from fastapi import FastAPI, HTTPException
+from starlette.requests import Request
+from starlette.responses import FileResponse, PlainTextResponse
+
+from repository import SQLiteSaveDataRepository
+from service import SaveDataService
+
+app = FastAPI()
+
+
+repo = SQLiteSaveDataRepository("metadata.sqlite")
+service = SaveDataService(repo)
+
+
+@app.get("/users/{user_name}/saves")
+async def query_all_user_save_data(user_name: str):
+    value = "\n".join(
+        [
+            f"{item.title_id}|{item.revision_id}"
+            for item in await service.query_all_latest_revision_by_user(user_name)
+        ]
+    )
+    return PlainTextResponse(value)
+
+
+@app.post("/users/{user_name}/saves/{title_id}/revisions")
+async def issue_save_data_revision_id(user_name: str, title_id: str):
+    return PlainTextResponse((await service.begin_new_revision(user_name, title_id)).revision_id)
+
+
+@app.get("/users/{user_name}/saves/{title_id}/revisions")
+async def get_latest_save_data_revision_id(user_name: str, title_id: str):
+    return PlainTextResponse((await service.get_latest_revision_by_title(user_name, title_id)).revision_id)
+
+
+@app.post("/users/{user_name}/saves/{title_id}/revisions/{revision_id}")
+async def upload_save_data_revision(user_name: str, title_id: str, revision_id: str, request: Request):
+    stream = request.stream()
+
+    async def read_stream(size: int | None):
+        try:
+            return await stream.__anext__()
+        except StopAsyncIteration:
+            return None
+
+    await service.process_file(revision_id, read_stream)
+    return PlainTextResponse(revision_id)
+
+
+@app.get("/users/{user_name}/saves/{title_id}/revisions/{revision_id}")
+async def download_save_data_revision(user_name: str, title_id: str, revision_id: str):
+    try:
+        file_path = service.get_save_data_path(revision_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path, media_type="application/octet-stream", filename=f"{revision_id}.sar")
