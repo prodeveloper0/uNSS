@@ -19,7 +19,7 @@
 #include "utils.hpp"
 #include "savedata.hpp"
 #include "ini.hpp"
-
+#include "netio.hpp"
 
 #define VERSION ("0.0.1")
 
@@ -123,31 +123,33 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
 const PromptMessage MENU_PROMPT_MESSAGE = PromptMessage("", MENU_OPTIONS, MENU_ON_KEY_PRESSED_CALLBACK);
 
 
-void testCurl()
+void testNetIO()
 {
-    const std::string url = "http://192.168.255.43:8000/";
+    HTTPClient client;
+    bool isContinued = true;
+    client.setUrl("http://192.168.1.74:8989/test")
+        .setMethod("POST")
+        .setHeader("Content-Type", "application/octet-stream")
+        .setReceiveCallback([&](const void* data, size_t size) {
+            const std::string receivedData(static_cast<const char*>(data), size);
+            drawText(std::string() + "Received data: " + receivedData);
+            return true;
+        })
+        .setSendCallback([&](void* data, size_t size, size_t& actualSize) {
+            if (!isContinued)
+            {
+                return false;
+            }
 
-    CURL *curl;
-    CURLcode res;
+            const std::string str = "Hello, World!";
+            actualSize = str.size();
+            memcpy(data, str.c_str(), actualSize);
+            drawText(std::string() + "Sent data size: " + std::to_string(actualSize));
 
-    curl = curl_easy_init();
-    if (curl) 
-    {
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "libnx-curl/1.0");
-        curl_easy_setopt(curl, CURLOPT_POST, 1L);
-
-        drawText("curl_easy_perform");
-
-        res = curl_easy_perform(curl);
-        if (res != CURLE_OK) 
-        {
-            drawText("curl_easy_perform() failed: " + std::string(curl_easy_strerror(res)));
-        }
-
-        drawText("cleanup");
-        curl_easy_cleanup(curl);
-    }
+            isContinued = false;
+            return true;
+        });
+    client.perform();
 }
 
 
@@ -167,6 +169,7 @@ int main(int argc, char **argv)
     drawText(std::string() + "Remote Enabled: " + ((bool)gl_Config["remote"]["enabled"] ? "YES" : "NO"));
     drawText(std::string() + "Remote Server URL: " + (std::string)gl_Config["remote"]["serverUrl"]);
     drawText();
+
 
     auto ret = getCurrentAccount(&gl_currentAccount);
     if (ret != 0) 
