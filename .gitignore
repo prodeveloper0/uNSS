@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.elf
+
+# Switch homebrew
+build/
+*.nacp
+*.nro
+*.nso
+*.npdm
+*.nsz
+*.nsp
+*.xci
+
+# Server-side data
+savedata/
+metadata.sqlite
