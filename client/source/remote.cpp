@@ -1,4 +1,7 @@
 #include "remote.hpp"
+
+#include <string.h>
+
 #include "http.hpp"
 
 #include "utils.hpp"
@@ -98,10 +101,15 @@ int HTTPRemoteStore::_uploadSaveDataRevision(const std::string userName, const u
 int HTTPRemoteStore::_getLatestSaveDataRevision(const std::string userName, const u64 titleId, std::string& revisionId)
 {
     HTTPClient client;
-    const std::string url = serverUrl + "/users/" + userName + "/saves/" + std::to_string(titleId) + "/revisions";
+    const std::string url = serverUrl + "/users/" + userName + "/saves/" + toHex(titleId) + "/revisions";
     client.setUrl(url).setMethod("GET")
     .setReceiveCallback([&revisionId](const void* data, size_t size, size_t& actualSize) {
-        revisionId = std::string(static_cast<const char*>(data), size);
+        char* buf = (char*)malloc(size + 1);
+        strncpy(buf, static_cast<const char*>(data), size);
+        buf[size] = '\0';
+        revisionId = std::string(buf);
+        free(buf);
+
         actualSize = size;
         return true;
     });
@@ -131,8 +139,9 @@ int HTTPRemoteStore::_downloadSaveDataRevision(const std::string userName, const
         }
     });
 
-    const std::string filePath = saveDataPath + "/" + std::to_string(titleId) + "/" + revisionId + ".sar";
+    const std::string filePath = saveDataPath + "/" + toHex(titleId) + ".sar";
     remove(filePath.c_str());
+
     file = fopen(filePath.c_str(), "wb");
     if (file == NULL) 
     {
@@ -140,7 +149,7 @@ int HTTPRemoteStore::_downloadSaveDataRevision(const std::string userName, const
     }
 
     HTTPClient client;
-    const std::string url = serverUrl + "/users/" + userName + "/saves/" + std::to_string(titleId) + "/revisions/" + revisionId;
+    const std::string url = serverUrl + "/users/" + userName + "/saves/" + toHex(titleId) + "/revisions/" + revisionId + "/data";
     client.setUrl(url).setMethod("GET")
     .setReceiveCallback([&file](const void* data, size_t size, size_t& actualSize) {
         if ((actualSize = fwrite(data, 1, size, file)) < 0)
