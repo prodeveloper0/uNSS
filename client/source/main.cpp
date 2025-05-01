@@ -56,6 +56,8 @@ void initData()
 
 const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 key) 
 {
+    HTTPRemoteStore remoteStore(gl_Config["remote"]["serverUrl"], gl_SaveDataPath);
+
     if (key == HidNpadButton_A) 
     {
         drawText(false);
@@ -82,14 +84,13 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
                 drawText("[" + padding(current, 3) + "/" + padding(total, 3) + "] " + titleName);
                 return true;
             },
-            [](int total, int current, int ret, u64 titleID) {
+            [&remoteStore](int total, int current, int ret, u64 titleID) {
                 if (ret != SAVEDATA_OK)
                 {
                     drawText("Failed to archive save data, ret=" + std::to_string(ret));
                 }
                 else if (gl_Config["remote"]["enabled"])
                 {
-                    HTTPRemoteStore remoteStore(gl_Config["remote"]["serverUrl"], gl_SaveDataPath);
                     int pullRet = remoteStore.push(gl_currentAccount.nickname, titleID);
                     if (pullRet != 0)
                     {
@@ -105,38 +106,71 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
     {
         drawText(false);
         drawText("Restoring save data...");
-        restoreAllSaveData(
-            gl_currentAccount.uid, 
-            gl_SaveDataPath, 
-            [](int total, int current, u64 titleID) {
-                std::string titleName;
+        recursiveMkdir(gl_SaveDataPath);
 
-                if (getTitleName(titleID, titleName, 0) != 0)
+        if (!gl_Config["remote"]["enabled"])
+        {
+            drawText("WARNING: pulling from remote is disabled, save data will be restored from local");
+            restoreAllSaveData(
+                gl_currentAccount.uid, 
+                gl_SaveDataPath, 
+                [](int total, int current, u64 titleID) {
+                    std::string titleName;
+
+                    if (getTitleName(titleID, titleName, 0) != 0)
+                    {
+                        titleName = "Unknown";
+                    }
+
+                    drawText("[" + padding(current, 3) + "/" + padding(total, 3) + "] " + titleName);
+                    return true;
+                },
+                [&remoteStore](int total, int current, int ret, u64 titleID) {
+                    if (ret != SAVEDATA_OK)
+                    {
+                        drawText("Failed to restore save data, ret=" + std::to_string(ret));
+                    }
+                    else if (gl_Config["remote"]["enabled"])
+                    {
+                        int pullRet = remoteStore.pull(gl_currentAccount.nickname, titleID);
+                        if (pullRet != 0)
+                        {
+                            drawText(std::string() + "Failed to pull from server, ret=" + std::to_string(pullRet));
+                        }
+                    }
+
+                    return true;
+                }
+            );
+        }
+        else
+        {
+            std::vector<u64> titleIDs;
+            if (probeTitles(gl_currentAccount.uid, titleIDs) != 0)
+            {
+                drawText("Failed to probe titles");
+                return;
+            }
+
+            for (size_t i = 0; i < titleIDs.size(); ++i) 
+            {
+                std::string titleName;
+                if (getTitleName(titleIDs[i], titleName, 0) != 0)
                 {
                     titleName = "Unknown";
                 }
 
-                drawText("[" + padding(current, 3) + "/" + padding(total, 3) + "] " + titleName);
-                return true;
-            },
-            [](int total, int current, int ret, u64 titleID) {
-                if (ret != SAVEDATA_OK)
+                drawText("[" + padding(i + 1, 3) + "/" + padding(titleIDs.size(), 3) + "] " + titleName);
+                if (remoteStore.pull(gl_currentAccount.nickname, titleIDs[i]) != 0)
                 {
-                    drawText("Failed to restore save data, ret=" + std::to_string(ret));
+                    drawText("Failed to pull from server");
                 }
-                else if (gl_Config["remote"]["enabled"])
+                else
                 {
-                    HTTPRemoteStore remoteStore(gl_Config["remote"]["serverUrl"], gl_SaveDataPath);
-                    int pullRet = remoteStore.pull(gl_currentAccount.nickname, titleID);
-                    if (pullRet != 0)
-                    {
-                        drawText(std::string() + "Failed to pull from server, ret=" + std::to_string(pullRet));
-                    }
+                    restoreSaveData(gl_currentAccount.uid, titleIDs[i], gl_SaveDataPath);
                 }
-
-                return true;
             }
-        );
+        }
     } else if (key == HidNpadButton_Plus) 
     {
         drawText("Exiting...\n");
