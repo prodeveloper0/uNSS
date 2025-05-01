@@ -28,11 +28,6 @@ async def issue_save_data_revision_id(user_name: str, title_id: str):
     return PlainTextResponse((await service.begin_new_revision(user_name, title_id)).revision_id)
 
 
-@app.get("/users/{user_name}/saves/{title_id}/revisions")
-async def get_latest_save_data_revision_id(user_name: str, title_id: str):
-    return PlainTextResponse((await service.get_latest_revision_by_title(user_name, title_id)).revision_id)
-
-
 @app.post("/users/{user_name}/saves/{title_id}/revisions/{revision_id}")
 async def upload_save_data_revision(user_name: str, title_id: str, revision_id: str, request: Request):
     stream = request.stream()
@@ -47,8 +42,17 @@ async def upload_save_data_revision(user_name: str, title_id: str, revision_id: 
     return PlainTextResponse(revision_id)
 
 
-@app.get("/users/{user_name}/saves/{title_id}/revisions/{revision_id}")
+@app.get("/users/{user_name}/saves/{title_id}/revisions")
+async def get_revisions(user_name: str, title_id: str):
+    revision = await service.get_latest_revision_by_title(user_name, title_id)
+    return PlainTextResponse(revision.revision_id)
+
+
+@app.get("/users/{user_name}/saves/{title_id}/revisions/{revision_id}/data")
 async def download_save_data_revision(user_name: str, title_id: str, revision_id: str):
+    if revision_id == "latest" or not revision_id:
+        revision_id = (await service.get_latest_revision_by_title(user_name, title_id)).revision_id
+
     try:
         file_path = service.get_save_data_path(revision_id)
     except FileNotFoundError:
