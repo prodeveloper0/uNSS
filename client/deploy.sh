@@ -1,8 +1,9 @@
 #!/bin/sh
 
-PROJECTNAME=$(basename "$PWD")
+PROJECTNAME=${2:-$(basename "$PWD")}
+OUTPUTNAME=$(basename "$PWD")
 HOSTPORT=$1
-FILE=$PROJECTNAME.nro
+FILE=$OUTPUTNAME.nro
 TARGET_PATH=switch/$PROJECTNAME
 REMOTE_PATH=$TARGET_PATH/$PROJECTNAME.nro
 
@@ -15,6 +16,6 @@ binary
 mkdir $TARGET_PATH
 cd $TARGET_PATH
 delete $FILE
-put $FILE
+put $FILE $PROJECTNAME.nro
 bye
 EOF
