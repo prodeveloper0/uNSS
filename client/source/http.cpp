@@ -47,7 +47,7 @@ HTTPClient& HTTPClient::setHeader(const std::string& key, const std::string& val
 }
 
 
-HTTPClient& HTTPClient::setReceiveCallback(const std::function<bool(const void* data, size_t size)>& onReceive)
+HTTPClient& HTTPClient::setReceiveCallback(const std::function<bool(const void* data, size_t size, size_t& actualSize)>& onReceive)
 {
     this->onReceive = onReceive;
     return *this;
@@ -66,10 +66,11 @@ size_t HTTPClient::writeCallback(void* contents, size_t size, size_t nmemb, void
     HTTPClient* client = static_cast<HTTPClient*>(userp);
     if (!client || !client->onReceive) 
     {
-        return 0;
+        return size * nmemb;
     }
 
-    return client->onReceive(contents, size * nmemb) ? size * nmemb : 0;
+    size_t actualSize = 0;
+    return client->onReceive(contents, size * nmemb, actualSize) ? actualSize : 0;
 }
 
 
@@ -78,7 +79,7 @@ size_t HTTPClient::readCallback(void* ptr, size_t size, size_t nmemb, void* user
     HTTPClient* client = static_cast<HTTPClient*>(userp);
     if (!client || !client->onSend) 
     {
-        return 0;
+        return size * nmemb;
     }
 
     size_t actualSize = 0;
@@ -102,10 +103,13 @@ int HTTPClient::perform()
     // 기본 설정
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, curl_headers);
+
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, this);
+
     curl_easy_setopt(curl, CURLOPT_READFUNCTION, readCallback);
     curl_easy_setopt(curl, CURLOPT_READDATA, this);
+
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 

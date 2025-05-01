@@ -28,7 +28,7 @@ private:
     std::map<std::string, std::string> headers;
     struct curl_slist* curl_headers;
 
-    std::function<bool(const void* data, size_t size)> onReceive;
+    std::function<bool(const void* data, size_t size, size_t& actualSize)> onReceive;
     std::function<bool(void* data, size_t size, size_t& actualSize)> onSend;
 
     // libcurl 콜백 함수
@@ -43,7 +43,7 @@ public:
     HTTPClient& setUrl(const std::string& url);
     HTTPClient& setMethod(const std::string& method);
     HTTPClient& setHeader(const std::string& key, const std::string& value);
-    HTTPClient& setReceiveCallback(const std::function<bool(const void* data, size_t size)>& onReceive);
+    HTTPClient& setReceiveCallback(const std::function<bool(const void* data, size_t size, size_t& actualSize)>& onReceive);
     HTTPClient& setSendCallback(const std::function<bool(void* data, size_t size, size_t& actualSize)>& onSend);
     int perform();
 };
