@@ -1,0 +1,10 @@
+version: '3'
+services:
+  unss-server:
+    image: unss-server:20250501
+    container_name: uNSS-Server
+    ports:
+      - "8989:8989"
+    volumes:
+      - ./savedata:/app/savedata
+      - ./metadata.sqlite:/app/metadata.sqlite
