@@ -3,3 +3,4 @@ pydantic
 aiosqlite
 uvicorn
 python-multipart
+click

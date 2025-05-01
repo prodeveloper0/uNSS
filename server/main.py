@@ -1,3 +1,6 @@
+import click
+import uvicorn
+
 from fastapi import FastAPI, HTTPException
 from starlette.requests import Request
 from starlette.responses import FileResponse, PlainTextResponse
@@ -58,3 +61,14 @@ async def download_save_data_revision(user_name: str, title_id: str, revision_id
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(file_path, media_type="application/octet-stream", filename=f"{revision_id}.sar")
+
+
+@click.command()
+@click.option("--host", default="0.0.0.0", help="Host to run the server on")
+@click.option("--port", default=8989, help="Port to run the server on")
+def main(host: str, port: int):
+    uvicorn.run("main:app", host=host, port=port)
+
+
+if __name__ == "__main__":
+    main()
