@@ -1,3 +1,4 @@
+import asyncio
 import click
 import uvicorn
 
@@ -67,7 +68,12 @@ async def download_save_data_revision(user_name: str, title_id: str, revision_id
 @click.option("--host", default="0.0.0.0", help="Host to run the server on")
 @click.option("--port", default=8989, help="Port to run the server on")
 def main(host: str, port: int):
-    uvicorn.run("main:app", host=host, port=port)
+    async def run():
+        uvicorn_config = uvicorn.Config(app, host=host, port=port, loop="uvloop")
+        server = uvicorn.Server(config=uvicorn_config)
+        await server.serve()
+
+    asyncio.run(run())
 
 
 if __name__ == "__main__":

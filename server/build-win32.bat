@@ -1,2 +1,2 @@
 @echo off
-pyinstaller --name "uNSS-Server" -w main.py --onefile
+pyinstaller --name "uNSS-Server" main.py --onefile
