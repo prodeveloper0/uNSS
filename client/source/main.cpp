@@ -19,7 +19,9 @@
 #include "utils.hpp"
 #include "savedata.hpp"
 #include "ini.hpp"
-#include "netio.hpp"
+#include "http.hpp"
+#include "remote.hpp"
+
 
 #define VERSION ("0.0.1")
 
@@ -52,11 +54,20 @@ void initData()
 }
 
 
-const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 key) {
-    if (key == HidNpadButton_A) {
+const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 key) 
+{
+    if (key == HidNpadButton_A) 
+    {
         drawText(false);
         drawText("Archiving save data...");
         recursiveMkdir(gl_SaveDataPath);
+
+        if (!gl_Config["remote"]["enabled"])
+        {
+            drawText("WARNING: pushing to remote is not enabled");
+            return;
+        }
+
         archiveAllSaveData(
             gl_currentAccount.uid, 
             gl_SaveDataPath, 
@@ -72,20 +83,26 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
                 return true;
             },
             [](int total, int current, int ret, u64 titleID) {
-                std::string titleName;
-                if (getTitleName(titleID, titleName, 0) != 0)
+                if (ret != SAVEDATA_OK)
                 {
-                    titleName = "Unknown";
+                    drawText("Failed to archive save data, ret=" + std::to_string(ret));
                 }
-
-                drawText("Failed to archive save data, ret=" + std::to_string(ret));
+                else if (gl_Config["remote"]["enabled"])
+                {
+                    HTTPRemoteStore remoteStore(gl_Config["remote"]["serverUrl"], gl_SaveDataPath);
+                    int pullRet = remoteStore.push(gl_currentAccount.nickname, titleID);
+                    if (pullRet != 0)
+                    {
+                        drawText(std::string() + "Failed to push to server, ret=" + std::to_string(pullRet));
+                    }
+                }
+                
                 return true;
             }
         );
-
         drawText(false);
-        drawText("Uploading to server...");
-    } else if (key == HidNpadButton_B) {
+    } else if (key == HidNpadButton_B) 
+    {
         drawText(false);
         drawText("Restoring save data...");
         restoreAllSaveData(
@@ -103,17 +120,25 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
                 return true;
             },
             [](int total, int current, int ret, u64 titleID) {
-                std::string titleName;
-                if (getTitleName(titleID, titleName, 0) != 0)
+                if (ret != SAVEDATA_OK)
                 {
-                    titleName = "Unknown";
+                    drawText("Failed to restore save data, ret=" + std::to_string(ret));
+                }
+                else if (gl_Config["remote"]["enabled"])
+                {
+                    HTTPRemoteStore remoteStore(gl_Config["remote"]["serverUrl"], gl_SaveDataPath);
+                    int pullRet = remoteStore.pull(gl_currentAccount.nickname, titleID);
+                    if (pullRet != 0)
+                    {
+                        drawText(std::string() + "Failed to pull from server, ret=" + std::to_string(pullRet));
+                    }
                 }
 
-                drawText("Failed to restore save data, ret=" + std::to_string(ret));
                 return true;
             }
         );
-    } else if (key == HidNpadButton_Plus) {
+    } else if (key == HidNpadButton_Plus) 
+    {
         drawText("Exiting...\n");
         gl_bRunning = false;
     }
@@ -121,36 +146,6 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
 
 
 const PromptMessage MENU_PROMPT_MESSAGE = PromptMessage("", MENU_OPTIONS, MENU_ON_KEY_PRESSED_CALLBACK);
-
-
-void testNetIO()
-{
-    HTTPClient client;
-    bool isContinued = true;
-    client.setUrl("http://192.168.1.74:8989/test")
-        .setMethod("POST")
-        .setHeader("Content-Type", "application/octet-stream")
-        .setReceiveCallback([&](const void* data, size_t size) {
-            const std::string receivedData(static_cast<const char*>(data), size);
-            drawText(std::string() + "Received data: " + receivedData);
-            return true;
-        })
-        .setSendCallback([&](void* data, size_t size, size_t& actualSize) {
-            if (!isContinued)
-            {
-                return false;
-            }
-
-            const std::string str = "Hello, World!";
-            actualSize = str.size();
-            memcpy(data, str.c_str(), actualSize);
-            drawText(std::string() + "Sent data size: " + std::to_string(actualSize));
-
-            isContinued = false;
-            return true;
-        });
-    client.perform();
-}
 
 
 int main(int argc, char **argv)
@@ -169,7 +164,6 @@ int main(int argc, char **argv)
     drawText(std::string() + "Remote Enabled: " + ((bool)gl_Config["remote"]["enabled"] ? "YES" : "NO"));
     drawText(std::string() + "Remote Server URL: " + (std::string)gl_Config["remote"]["serverUrl"]);
     drawText();
-
 
     auto ret = getCurrentAccount(&gl_currentAccount);
     if (ret != 0) 
