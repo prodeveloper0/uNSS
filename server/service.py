@@ -22,6 +22,8 @@ class SaveDataService:
         :return: TitleRevision
         """
         revision_id = await self._repo.get_latest_revision_by_title(user_name, title_id)
+        if not revision_id:
+            raise ValueError(f"No revision found for title {title_id}")
         return TitleRevision(title_id=title_id, revision_id=revision_id)
 
     async def query_all_latest_revision_by_user(self, user_name: str) -> Sequence[TitleRevision]:
