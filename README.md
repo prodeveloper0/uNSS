@@ -48,4 +48,5 @@ Just used prebuilt binary by PyInstaller
 
 
 # Limitations
-Save file restoration only works if the game has saved at least once
+* Save file restoration only works if the game has saved at least once
+* Not allow running in Applet Mode
