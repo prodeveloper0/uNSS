@@ -16,8 +16,8 @@
 
 int archiveSaveData(AccountUid uid, const u64 titleID, const std::string& outputPath);
 int archiveAllSaveData(AccountUid uid, const std::string& outputPath);
-int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& errorCallback);
+int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& doneCallback);
 
 int restoreSaveData(AccountUid uid, const u64 titleID, const std::string& sourcePath);
 int restoreAllSaveData(AccountUid uid, const std::string& sourcePath);
-int restoreAllSaveData(AccountUid uid, const std::string& sourcePath, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& errorCallback);
+int restoreAllSaveData(AccountUid uid, const std::string& sourcePath, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& doneCallback);

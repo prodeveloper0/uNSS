@@ -92,7 +92,7 @@ int archiveAllSaveData(AccountUid uid, const std::string& outputPath)
 }
 
 
-int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& errorCallback)
+int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& doneCallback)
 {
     std::vector<u64> titleIDs;
     if (probeTitles(uid, titleIDs) != 0)
@@ -107,11 +107,8 @@ int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const std:
 
         const int ret = archiveSaveData(uid, titleIDs[i], outputPath);
 
-        if (ret != 0)
-        {
-            if (!errorCallback(titleIDs.size(), i + 1, ret, titleIDs[i]))
-                return ret;
-        }
+        if (!doneCallback(titleIDs.size(), i + 1, ret, titleIDs[i]))
+            return ret;
     }
 
     return SAVEDATA_OK;
@@ -212,7 +209,7 @@ int restoreAllSaveData(AccountUid uid, const std::string& sourcePath)
 }
 
 
-int restoreAllSaveData(AccountUid uid, const std::string& sourcePath, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& errorCallback)
+int restoreAllSaveData(AccountUid uid, const std::string& sourcePath, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& doneCallback)
 {
     std::vector<u64> titleIDs;
     walk(sourcePath, [&](const std::string& path) {
@@ -231,11 +228,8 @@ int restoreAllSaveData(AccountUid uid, const std::string& sourcePath, const std:
             continue;
 
         const int ret = restoreSaveData(uid, titleIDs[i], sourcePath);
-        if (ret != 0)
-        {
-            if (!errorCallback(titleIDs.size(), i + 1, ret, titleIDs[i]))
-                return ret;
-        }
+        if (!doneCallback(titleIDs.size(), i + 1, ret, titleIDs[i]))
+            return ret;
     }
 
     return SAVEDATA_OK;
