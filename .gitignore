@@ -20,3 +20,6 @@ build/
 # Server-side data
 savedata/
 metadata.sqlite
+
+# Claude
+.claude/
