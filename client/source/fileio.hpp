@@ -11,6 +11,7 @@ int walk(const std::string& path, std::function<void(const std::string&, bool is
 
 int recursiveMkdir(const std::string& path, mode_t mode = 0777);
 
+int createSaveData(const AccountUid accountUid, const u64 titleID);
 int mountSaveData(const std::string& mountPoint, const AccountUid accountUid, const u64 titleID);
 int mountBcatSaveData(const std::string& mountPoint, const u64 titleID);
 int unmount(const std::string& mountPoint);

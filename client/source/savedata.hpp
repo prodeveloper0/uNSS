@@ -14,9 +14,11 @@
 #define SAVEDATA_FAILED_TO_PROBE_TITLES -5
 
 
+typedef std::function<int(std::vector<u64>&)> ProbeTitlesFunc;
+
 int archiveSaveData(AccountUid uid, const u64 titleID, const std::string& outputPath);
-int archiveAllSaveData(AccountUid uid, const std::string& outputPath);
-int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& doneCallback);
+int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const ProbeTitlesFunc& probeFunc);
+int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const ProbeTitlesFunc& probeFunc, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& doneCallback);
 
 int restoreSaveData(AccountUid uid, const u64 titleID, const std::string& sourcePath);
 int restoreAllSaveData(AccountUid uid, const std::string& sourcePath);

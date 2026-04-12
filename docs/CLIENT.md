@@ -94,5 +94,4 @@ accountOptions.useProfileSelector  = (bool)gl_Config["account"]["useProfileSelec
 
 ## 제약사항 (README 발췌)
 
-- 타겟 콘솔에서 해당 게임이 최소 한 번이라도 세이브를 한 적이 있어야 복원이 동작합니다.
 - Applet mode (hbmenu 를 album 애플릿에서 실행한 경우 등) 에서는 library applet 제약으로 psel 을 띄울 수 없으므로, `[account] defaultAccountName` 이 반드시 지정되어 있어야 합니다. 미지정 시 에러 메시지와 함께 exit 만 가능한 메뉴가 표시됩니다. 위 "계정 결정 전략" 참고.

@@ -80,6 +80,66 @@ int recursiveMkdir(const std::string& path, mode_t mode)
 }
 
 
+int createSaveData(const AccountUid accountUid, const u64 titleID)
+{
+    NsApplicationControlData controlData = {0x00,};
+    size_t actualSize;
+
+    Result rc = nsInitialize();
+    if (R_FAILED(rc))
+    {
+        return -1;
+    }
+
+    rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, titleID, &controlData, sizeof(controlData), &actualSize);
+    nsExit();
+
+    if (R_FAILED(rc))
+    {
+        return -1;
+    }
+
+    s64 saveDataSize = controlData.nacp.user_account_save_data_size;
+    s64 journalSize = controlData.nacp.user_account_save_data_journal_size;
+
+    if (saveDataSize == 0)
+    {
+        saveDataSize = 0x40000;  // 256KB fallback
+    }
+    if (journalSize == 0)
+    {
+        journalSize = 0x40000;  // 256KB fallback
+    }
+
+    FsSaveDataAttribute attr = {};
+    attr.application_id = titleID;
+    attr.uid = accountUid;
+    attr.save_data_type = FsSaveDataType_Account;
+
+    FsSaveDataCreationInfo creation = {};
+    creation.save_data_size = saveDataSize;
+    creation.journal_size = journalSize;
+    creation.available_size = 0x4000;
+    creation.owner_id = titleID;
+    creation.save_data_space_id = FsSaveDataSpaceId_User;
+
+    FsSaveDataMetaInfo meta = {};
+
+    rc = fsCreateSaveDataFileSystem(&attr, &creation, &meta);
+    if (R_FAILED(rc))
+    {
+        // 0x22CA 오류 -> 이미 세이브데이터 파일시스템 있으므로 무시
+        if (R_VALUE(rc) == 0x22CA)
+        {
+            return 0;
+        }
+        return -1;
+    }
+
+    return 0;
+}
+
+
 int mountSaveData(const std::string& mountPoint, const AccountUid accountUid, const u64 titleID)
 {
     Result rc = fsdevMountSaveData(mountPoint.c_str(), titleID, accountUid);

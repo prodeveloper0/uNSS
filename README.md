@@ -28,6 +28,14 @@ defaultAccountName=MyNickname
 ; 0          : skip psel entirely and always resolve the account
 ;              from defaultAccountName.
 useProfileSelector=1
+
+[title]
+; Which titles to include when pushing / pulling save data.
+; "created" (default): only titles that already have save data on this console.
+; "all"               : every installed title, even if it has never been saved.
+;                       When restoring, uNSS will automatically create save data
+;                       for titles that don't have any yet.
+probeBy=created
 ```
 
 #### `[account]` behavior matrix
@@ -69,5 +77,4 @@ Just used prebuilt binary by PyInstaller
 
 
 # Limitations
-* Save file restoration only works if the game has saved at least once
 * In applet mode (e.g. hbmenu launched via the album applet), the Switch user cannot be picked from the system's profile selector — you must set `[account] defaultAccountName` in `config.ini`. See the Configuration section above.

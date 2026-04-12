@@ -2,7 +2,6 @@
 
 #include <string.h>
 
-#include "title.hpp"
 #include "fileio.hpp"
 #include "zipio.hpp"
 
@@ -81,11 +80,12 @@ int archiveSaveData(AccountUid uid, const u64 titleID, const std::string& output
 }
 
 
-int archiveAllSaveData(AccountUid uid, const std::string& outputPath)
+int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const ProbeTitlesFunc& probeFunc)
 {
     return archiveAllSaveData(
         uid,
         outputPath,
+        probeFunc,
         [](int, int, u64)
         {
             return true;
@@ -98,10 +98,10 @@ int archiveAllSaveData(AccountUid uid, const std::string& outputPath)
 }
 
 
-int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& doneCallback)
+int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const ProbeTitlesFunc& probeFunc, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& doneCallback)
 {
     std::vector<u64> titleIDs;
-    if (probeTitles(uid, titleIDs) != 0)
+    if (probeFunc(titleIDs) != 0)
     {
         return SAVEDATA_FAILED_TO_PROBE_TITLES;
     }
@@ -145,6 +145,8 @@ int restoreSaveData(AccountUid uid, const u64 titleID, const std::string& source
         }
     );
 
+
+    createSaveData(uid, titleID);
 
     if (mountSaveData("save", uid, titleID) != 0)
     {

@@ -23,9 +23,6 @@
 #include "remote.hpp"
 
 
-#define VERSION ("0.0.1")
-
-
 const char* gl_SaveDataPath = "sdmc:/uNSS/saves";
 const char* gl_ConfigPath = "sdmc:/uNSS/config.ini";
 
@@ -47,6 +44,7 @@ void initConfig()
     gl_Config["remote"]["serverUrl"].has("http://0.0.0.0:8989");
     gl_Config["account"]["defaultAccountName"].has("");
     gl_Config["account"]["useProfileSelector"].has(true);
+    gl_Config["title"]["probeBy"].has("created");
 }
 
 
@@ -72,9 +70,15 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
             return;
         }
 
+        const ProbeTitlesFunc probeFunc = [](std::vector<u64>& titleIDs)
+        {
+            return probeTitlesBy(gl_Config["title"]["probeBy"].value, gl_currentAccount.uid, titleIDs);
+        };
+
         archiveAllSaveData(
             gl_currentAccount.uid,
             gl_SaveDataPath,
+            probeFunc,
             [](int total, int current, u64 titleID)
             {
                 std::string titleName;
@@ -153,7 +157,11 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
         else
         {
             std::vector<u64> titleIDs;
-            if (probeTitles(gl_currentAccount.uid, titleIDs) != 0)
+            const ProbeTitlesFunc probeFunc = [](std::vector<u64>& ids)
+            {
+                return probeTitlesBy(gl_Config["title"]["probeBy"].value, gl_currentAccount.uid, ids);
+            };
+            if (probeFunc(titleIDs) != 0)
             {
                 drawText("Failed to probe titles");
                 return;
@@ -201,7 +209,7 @@ int main(int argc, char **argv)
     initData();
     initConfig();
 
-    drawText("micro NX Save Sync\nVersion: " + std::string(VERSION));
+    drawText("micro NX Save Sync");
     drawText();
     drawText(std::string() + "Remote Enabled: " + ((bool)gl_Config["remote"]["enabled"] ? "YES" : "NO"));
     drawText(std::string() + "Remote Server URL: " + (std::string)gl_Config["remote"]["serverUrl"]);
