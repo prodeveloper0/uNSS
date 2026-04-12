@@ -1,5 +1,8 @@
 #!/bin/sh
 
+./clean.sh
+./build.sh
+
 PROJECTNAME=${2:-$(basename "$PWD")}
 OUTPUTNAME=$(basename "$PWD")
 HOSTPORT=$1

@@ -1,0 +1,29 @@
+services:
+  builder:
+    build: .
+    image: unss-client-builder:latest
+    container_name: uNSS-Client-Builder
+    working_dir: /client
+    # 호스트 UID/GID 로 실행해서 빌드 산출물 소유권이 호스트 사용자와 일치하도록 함.
+    # zsh 는 $UID / $GID 를 자동 노출. bash 는 $GID 가 비어있을 수 있으므로
+    # `GID=$(id -g) docker compose run --rm builder` 로 호출하거나 .env 에 지정.
+    user: "${UID:-1000}:${GID:-1000}"
+    # /etc/passwd 에 없는 UID 로 실행될 때 $HOME 이 / 로 잡혀 쓰기 불가가 될 수 있어
+    # 컴파일러/링커가 임시 파일을 만들 수 있는 디렉토리로 명시.
+    environment:
+      HOME: /tmp
+    volumes:
+      - .:/client
+    command: make
+
+  cleaner:
+    image: unss-client-builder:latest
+    build: .
+    container_name: uNSS-Client-Cleaner
+    working_dir: /client
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      HOME: /tmp
+    volumes:
+      - .:/client
+    command: make clean
