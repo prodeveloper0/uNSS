@@ -30,12 +30,12 @@ int walk(const std::string& path, std::function<void(const std::string&, bool is
 
         const std::string fullPath = path[path.size() - 1] == '/' ? path + entry->d_name : path + "/" + entry->d_name;
 
-        if (entry->d_type == DT_DIR) 
+        if (entry->d_type == DT_DIR)
         {
             walk(fullPath, callback);
+            callback(fullPath, true);
         }
-        callback(fullPath, true);
-        else 
+        else
         {
             callback(fullPath, false);
         }

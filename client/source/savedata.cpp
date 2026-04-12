@@ -155,12 +155,10 @@ int restoreSaveData(AccountUid uid, const u64 titleID, const std::string& source
     {
         if (isDir)
         {
-            drawText("remove dir: " + path);
             rmdir(path.c_str());
         }
         else
         {
-            drawText("remove file: " + path);
             remove(path.c_str());
         }
     });
@@ -177,7 +175,6 @@ int restoreSaveData(AccountUid uid, const u64 titleID, const std::string& source
             }
             else
             {
-                drawText("remove file: " + path);
                 remove(path.c_str());
             }
         });
@@ -187,7 +184,6 @@ int restoreSaveData(AccountUid uid, const u64 titleID, const std::string& source
     bool success = true;
     zipReader.walk([&](const std::string& path, ZipReader::EXTRACT_ONE_FUNC extractOneFunc)
     {
-        drawText(path);
         if (!success)
         {
             return false;
@@ -196,6 +192,9 @@ int restoreSaveData(AccountUid uid, const u64 titleID, const std::string& source
         if (startWith(path, "saves/"))
         {
             const std::string savePath = "save:/" + path.substr(strlen("saves/"));
+
+            drawText("* " + path + " -> " + savePath);
+
             success = extractOneFunc(savePath);
 
             if (!success)
@@ -212,6 +211,7 @@ int restoreSaveData(AccountUid uid, const u64 titleID, const std::string& source
         else if (startWith(path, "bcat/"))
         {
             const std::string bcatPath = "bcat:/" + path.substr(strlen("bcat/"));
+            drawText("* " + path + " -> " + bcatPath);
             success = extractOneFunc(bcatPath);
             if (success)
             {
