@@ -1,6 +1,7 @@
 #include "zipio.hpp"
 
 #include "miniz.h"
+#include "fileio.hpp"
 
 
 ZipWriter::ZipWriter()
@@ -151,6 +152,13 @@ bool ZipReader::extractAll(const std::string& path)
 
 bool ZipReader::extractOne(const std::string& sourcePath, const std::string& destPath)
 {
+    const std::string::size_type lastSlash = destPath.rfind('/');
+    if (lastSlash != std::string::npos)
+    {
+        const std::string parentDir = destPath.substr(0, lastSlash);
+        recursiveMkdir(parentDir);
+    }
+
     if (mz_zip_reader_extract_file_to_file((mz_zip_archive*)pZip, sourcePath.c_str(), destPath.c_str(), 0))
     {
         return true;

@@ -12,27 +12,32 @@
 #include "tui.hpp"
 
 
-int walk(const std::string& path, std::function<void(const std::string&)> callback)
+int walk(const std::string& path, std::function<void(const std::string&, bool isDir)> callback)
 {
     DIR* dir = opendir(path.c_str());
-    if (dir == NULL) 
+    if (dir == NULL)
     {
         return -1;
     }
 
     dirent* entry;
-    while ((entry = readdir(dir)) != NULL) 
+    while ((entry = readdir(dir)) != NULL)
     {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        {
             continue;
         }
 
         const std::string fullPath = path[path.size() - 1] == '/' ? path + entry->d_name : path + "/" + entry->d_name;
 
-        if (entry->d_type == DT_DIR) {
+        if (entry->d_type == DT_DIR) 
+        {
             walk(fullPath, callback);
-        } else {
-            callback(fullPath);
+        }
+        callback(fullPath, true);
+        else 
+        {
+            callback(fullPath, false);
         }
     }
 

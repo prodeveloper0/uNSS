@@ -45,6 +45,8 @@ void initConfig()
 {
     gl_Config["remote"]["enabled"].has(false);
     gl_Config["remote"]["serverUrl"].has("http://0.0.0.0:8989");
+    gl_Config["account"]["defaultAccountName"].has("");
+    gl_Config["account"]["useProfileSelector"].has(true);
 }
 
 
@@ -54,11 +56,11 @@ void initData()
 }
 
 
-const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 key) 
+const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 key)
 {
     HTTPRemoteStore remoteStore(gl_Config["remote"]["serverUrl"], gl_SaveDataPath);
 
-    if (key == HidNpadButton_A) 
+    if (key == HidNpadButton_A)
     {
         drawText(false);
         drawText("Archiving save data...");
@@ -71,9 +73,10 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
         }
 
         archiveAllSaveData(
-            gl_currentAccount.uid, 
-            gl_SaveDataPath, 
-            [](int total, int current, u64 titleID) {
+            gl_currentAccount.uid,
+            gl_SaveDataPath,
+            [](int total, int current, u64 titleID)
+            {
                 std::string titleName;
 
                 if (getTitleName(titleID, titleName, 0) != 0)
@@ -84,7 +87,8 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
                 drawText("[" + padding(current, 3) + "/" + padding(total, 3) + "] " + titleName);
                 return true;
             },
-            [&remoteStore](int total, int current, int ret, u64 titleID) {
+            [&remoteStore](int total, int current, int ret, u64 titleID)
+            {
                 if (ret != SAVEDATA_OK)
                 {
                     drawText("Failed to archive save data, ret=" + std::to_string(ret));
@@ -97,12 +101,13 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
                         drawText(std::string() + "Failed to push to server, ret=" + std::to_string(pullRet));
                     }
                 }
-                
+
                 return true;
             }
         );
         drawText(false);
-    } else if (key == HidNpadButton_B) 
+    }
+    else if (key == HidNpadButton_B)
     {
         drawText(false);
         drawText("Restoring save data...");
@@ -112,9 +117,10 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
         {
             drawText("WARNING: pulling from remote is disabled, save data will be restored from local");
             restoreAllSaveData(
-                gl_currentAccount.uid, 
-                gl_SaveDataPath, 
-                [](int total, int current, u64 titleID) {
+                gl_currentAccount.uid,
+                gl_SaveDataPath,
+                [](int total, int current, u64 titleID)
+                {
                     std::string titleName;
 
                     if (getTitleName(titleID, titleName, 0) != 0)
@@ -125,7 +131,8 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
                     drawText("[" + padding(current, 3) + "/" + padding(total, 3) + "] " + titleName);
                     return true;
                 },
-                [&remoteStore](int total, int current, int ret, u64 titleID) {
+                [&remoteStore](int total, int current, int ret, u64 titleID)
+                {
                     if (ret != SAVEDATA_OK)
                     {
                         drawText("Failed to restore save data, ret=" + std::to_string(ret));
@@ -152,7 +159,7 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
                 return;
             }
 
-            for (size_t i = 0; i < titleIDs.size(); ++i) 
+            for (size_t i = 0; i < titleIDs.size(); ++i)
             {
                 std::string titleName;
                 if (getTitleName(titleIDs[i], titleName, 0) != 0)
@@ -171,7 +178,8 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
                 }
             }
         }
-    } else if (key == HidNpadButton_Plus) 
+    }
+    else if (key == HidNpadButton_Plus)
     {
         drawText("Exiting...\n");
         gl_bRunning = false;
@@ -199,19 +207,40 @@ int main(int argc, char **argv)
     drawText(std::string() + "Remote Server URL: " + (std::string)gl_Config["remote"]["serverUrl"]);
     drawText();
 
-    auto ret = getCurrentAccount(&gl_currentAccount);
-    if (ret != 0) 
+    AccountResolveOptions accountOptions;
+    accountOptions.defaultAccountName = gl_Config["account"]["defaultAccountName"].value;
+    accountOptions.useProfileSelector = (bool)gl_Config["account"]["useProfileSelector"];
+    auto ret = getCurrentAccount(&gl_currentAccount, accountOptions);
+    if (ret != 0)
     {
         drawText("Failed to get current account");
-    } else 
+        drawText();
+
+        const std::map<u64, std::string> EXIT_ONLY_OPTIONS = {
+            {HidNpadButton_Plus, "Exit"}
+        };
+        const PromptMessage exitPrompt("", EXIT_ONLY_OPTIONS, [](u64 key)
+        {
+            if (key == HidNpadButton_Plus)
+            {
+                gl_bRunning = false;
+            }
+        });
+        while (gl_bRunning)
+        {
+            exitPrompt.draw();
+            exitPrompt.wait();
+        }
+    }
+    else
     {
         drawText(std::string() + "Current account: " + gl_currentAccount.nickname);
-    }
 
-    while (gl_bRunning) 
-    {
-        MENU_PROMPT_MESSAGE.draw();
-        MENU_PROMPT_MESSAGE.wait();
+        while (gl_bRunning)
+        {
+            MENU_PROMPT_MESSAGE.draw();
+            MENU_PROMPT_MESSAGE.wait();
+        }
     }
 
     curl_global_cleanup();

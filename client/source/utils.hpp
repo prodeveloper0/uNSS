@@ -59,7 +59,8 @@ bool inline endWith(const std::string& str, const std::string& suffix)
 template<typename T>
 void freeSafely(T** ptr)
 {
-    if (ptr) {
+    if (ptr)
+    {
         free(*ptr);
         *ptr = NULL;
     }

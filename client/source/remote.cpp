@@ -13,7 +13,7 @@
 #define HTTP_REMOTE_FILE_ERROR (-3)
 
 
-HTTPRemoteStore::HTTPRemoteStore(const std::string& serverUrl, const std::string& saveDataPath) 
+HTTPRemoteStore::HTTPRemoteStore(const std::string& serverUrl, const std::string& saveDataPath)
     : serverUrl(serverUrl), saveDataPath(saveDataPath)
 {
 }
@@ -29,7 +29,8 @@ int HTTPRemoteStore::_issueSaveDataRevisionId(const std::string userName, const 
     HTTPClient client;
     const std::string url = serverUrl + "/users/" + userName + "/saves/" + toHex(titleId) + "/revisions";
     client.setUrl(url).setMethod("POST")
-    .setReceiveCallback([&revisionId](const void* data, size_t size, size_t& actualSize) {
+    .setReceiveCallback([&revisionId](const void* data, size_t size, size_t& actualSize)
+    {
         revisionId = std::string(static_cast<const char*>(data), size);
         actualSize = size;
         return true;
@@ -54,8 +55,9 @@ int HTTPRemoteStore::_uploadSaveDataRevision(const std::string userName, const u
 {
     FILE* file = NULL;
 
-    const Defer defer([&]() {
-        if (file != NULL) 
+    const Defer defer([&]()
+    {
+        if (file != NULL)
         {
             fclose(file);
         }
@@ -65,7 +67,7 @@ int HTTPRemoteStore::_uploadSaveDataRevision(const std::string userName, const u
     const std::string filePath = saveDataPath + "/" + hexTitleId + ".sar";
 
     file = fopen(filePath.c_str(), "rb");
-    if (file == NULL) 
+    if (file == NULL)
     {
         return HTTP_REMOTE_FILE_ERROR;
     }
@@ -73,7 +75,8 @@ int HTTPRemoteStore::_uploadSaveDataRevision(const std::string userName, const u
     HTTPClient client;
     const std::string url = serverUrl + "/users/" + userName + "/saves/" + hexTitleId + "/revisions/" + revisionId;
     client.setUrl(url).setMethod("POST")
-    .setSendCallback([&file](void* data, size_t size, size_t& actualSize) {
+    .setSendCallback([&file](void* data, size_t size, size_t& actualSize)
+    {
         actualSize = fread(data, 1, size, file);
         if (actualSize < 0)
         {
@@ -103,7 +106,8 @@ int HTTPRemoteStore::_getLatestSaveDataRevision(const std::string userName, cons
     HTTPClient client;
     const std::string url = serverUrl + "/users/" + userName + "/saves/" + toHex(titleId) + "/revisions";
     client.setUrl(url).setMethod("GET")
-    .setReceiveCallback([&revisionId](const void* data, size_t size, size_t& actualSize) {
+    .setReceiveCallback([&revisionId](const void* data, size_t size, size_t& actualSize)
+    {
         char* buf = (char*)malloc(size + 1);
         strncpy(buf, static_cast<const char*>(data), size);
         buf[size] = '\0';
@@ -133,8 +137,10 @@ int HTTPRemoteStore::_downloadSaveDataRevision(const std::string userName, const
 {
     FILE* file = NULL;
 
-    const Defer defer([&]() {
-        if (file != NULL) {
+    const Defer defer([&]()
+    {
+        if (file != NULL)
+        {
             fclose(file);
         }
     });
@@ -143,7 +149,7 @@ int HTTPRemoteStore::_downloadSaveDataRevision(const std::string userName, const
     remove(filePath.c_str());
 
     file = fopen(filePath.c_str(), "wb");
-    if (file == NULL) 
+    if (file == NULL)
     {
         return HTTP_REMOTE_FILE_ERROR;
     }
@@ -151,7 +157,8 @@ int HTTPRemoteStore::_downloadSaveDataRevision(const std::string userName, const
     HTTPClient client;
     const std::string url = serverUrl + "/users/" + userName + "/saves/" + toHex(titleId) + "/revisions/" + revisionId + "/data";
     client.setUrl(url).setMethod("GET")
-    .setReceiveCallback([&file](const void* data, size_t size, size_t& actualSize) {
+    .setReceiveCallback([&file](const void* data, size_t size, size_t& actualSize)
+    {
         if ((actualSize = fwrite(data, 1, size, file)) < 0)
         {
             return false;
@@ -179,7 +186,7 @@ int HTTPRemoteStore::push(const std::string userName, const u64 titleId)
 {
     int ret;
     std::string revisionId;
-    
+
     ret = _issueSaveDataRevisionId(userName, titleId, revisionId);
     if (ret != HTTP_REMOTE_SUCCESS)
     {
@@ -194,7 +201,7 @@ int HTTPRemoteStore::pull(const std::string userName, const u64 titleId)
 {
     int ret;
     std::string revisionId;
-    
+
     ret = _getLatestSaveDataRevision(userName, titleId, revisionId);
     if (ret != HTTP_REMOTE_SUCCESS)
     {

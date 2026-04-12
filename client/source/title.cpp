@@ -17,10 +17,12 @@ int getTitleName(const u64 titleID, std::string& titleName)
 int getTitleName(const u64 titleID, std::string& titleName, int language)
 {
     const Defer defer(
-        [&]() {
+        [&]()
+        {
             nsInitialize();
-        }, 
-        [&]() {
+        },
+        [&]()
+        {
             nsExit();
         }
     );
@@ -43,7 +45,9 @@ int getTitleName(const u64 titleID, std::string& titleName, int language)
                 strncpy(buf, langentry->name, 0x200);
                 titleName = buf;
             }
-        } else {
+        }
+        else
+        {
             // Use specified language
             char buf[0x201] = {0x00, };
             strncpy(buf, controlData.nacp.lang[language].name, 0x200);

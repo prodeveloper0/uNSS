@@ -7,7 +7,7 @@
 #include <switch.h>
 
 
-int walk(const std::string& path, std::function<void(const std::string&)> callback);
+int walk(const std::string& path, std::function<void(const std::string&, bool isDir)> callback);
 
 int recursiveMkdir(const std::string& path, mode_t mode = 0777);
 

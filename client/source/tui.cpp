@@ -83,7 +83,8 @@ u64 waitKey(const u64* keys, size_t count)
     static PadState pad;
     static bool initialized = false;
 
-    if (!initialized) {
+    if (!initialized)
+    {
         padInitializeDefault(&pad);
         initialized = true;
     }
