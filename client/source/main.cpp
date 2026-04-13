@@ -44,7 +44,10 @@ void initConfig()
     gl_Config["remote"]["serverUrl"].has("http://0.0.0.0:8989");
     gl_Config["account"]["defaultAccountName"].has("");
     gl_Config["account"]["useProfileSelector"].has(true);
-    gl_Config["title"]["probeBy"].has("created");
+    gl_Config["title"]["archiveBy"].has("created");
+    gl_Config["title"]["restoreBy"].has("all");
+    gl_Config["title"]["excludedTitleIds"].has("");
+    gl_Config["title"]["excludedTitleNames"].has("");
 }
 
 
@@ -70,9 +73,16 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
             return;
         }
 
-        const ProbeTitlesFunc probeFunc = [](std::vector<u64>& titleIDs)
+        const ProbeTitlesFunc probeFunc = [](const AccountUid uid, std::vector<u64>& titleIDs)
         {
-            return probeTitlesBy(gl_Config["title"]["probeBy"].value, gl_currentAccount.uid, titleIDs);
+            int ret = gl_Config["title"]["archiveBy"].value == "all"
+                ? probeAllTitles(uid, titleIDs)
+                : probeSaveDataCreatedTitles(uid, titleIDs);
+            if (ret == 0)
+            {
+                filterExcludedTitles(titleIDs, gl_Config["title"]["excludedTitleIds"].value, gl_Config["title"]["excludedTitleNames"].value);
+            }
+            return ret;
         };
 
         archiveAllSaveData(
@@ -157,11 +167,14 @@ const PromptMessage::OnKeyPressedCallback MENU_ON_KEY_PRESSED_CALLBACK = [](u64 
         else
         {
             std::vector<u64> titleIDs;
-            const ProbeTitlesFunc probeFunc = [](std::vector<u64>& ids)
+            int probeRet = gl_Config["title"]["restoreBy"].value == "all"
+                ? probeAllTitles(gl_currentAccount.uid, titleIDs)
+                : probeSaveDataCreatedTitles(gl_currentAccount.uid, titleIDs);
+            if (probeRet == 0)
             {
-                return probeTitlesBy(gl_Config["title"]["probeBy"].value, gl_currentAccount.uid, ids);
-            };
-            if (probeFunc(titleIDs) != 0)
+                filterExcludedTitles(titleIDs, gl_Config["title"]["excludedTitleIds"].value, gl_Config["title"]["excludedTitleNames"].value);
+            }
+            if (probeRet != 0)
             {
                 drawText("Failed to probe titles");
                 return;

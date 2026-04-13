@@ -30,12 +30,23 @@ defaultAccountName=MyNickname
 useProfileSelector=1
 
 [title]
-; Which titles to include when pushing / pulling save data.
+; Which titles to include when pushing save data (archiving).
 ; "created" (default): only titles that already have save data on this console.
 ; "all"               : every installed title, even if it has never been saved.
-;                       When restoring, uNSS will automatically create save data
-;                       for titles that don't have any yet.
-probeBy=created
+archiveBy=created
+
+; Which titles to include when pulling save data (restoring).
+; "all" (default)     : every installed title, even if it has never been saved.
+;                       uNSS will automatically create save data for titles
+;                       that don't have any yet.
+; "created"           : only titles that already have save data on this console.
+restoreBy=all
+
+; Exclude specific titles by title ID (hex, comma-separated).
+; excludedTitleIds=0100000000010000,010000000000100B
+
+; Exclude specific titles by name (separated by "||").
+; excludedTitleNames=uNSS||DBI
 ```
 
 #### `[account]` behavior matrix

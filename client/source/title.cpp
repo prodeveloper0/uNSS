@@ -3,7 +3,8 @@
 #include "utils.hpp"
 
 #include <string.h>
-
+#include <algorithm>
+#include <set>
 
 #include "tui.hpp"
 
@@ -61,7 +62,7 @@ int getTitleName(const u64 titleID, std::string& titleName, int language)
 }
 
 
-int probeAllTitles(std::vector<u64>& titleIDs)
+int probeAllTitles(const AccountUid accountUid, std::vector<u64>& titleIDs)
 {
     const Defer defer(
         [&]()
@@ -136,12 +137,75 @@ int probeSaveDataCreatedTitles(const AccountUid accountUid, std::vector<u64>& ti
 }
 
 
-int probeTitlesBy(const std::string& probeBy, const AccountUid accountUid, std::vector<u64>& titleIDs)
+static std::vector<std::string> splitBy(const std::string& str, const std::string& delimiter)
 {
-    if (probeBy == "all")
+    std::vector<std::string> tokens;
+    size_t start = 0;
+
+    while (start < str.size())
     {
-        return probeAllTitles(titleIDs);
+        size_t pos = str.find(delimiter, start);
+        if (pos == std::string::npos)
+        {
+            tokens.push_back(str.substr(start));
+            break;
+        }
+
+        tokens.push_back(str.substr(start, pos - start));
+        start = pos + delimiter.size();
     }
 
-    return probeSaveDataCreatedTitles(accountUid, titleIDs);
+    return tokens;
 }
+
+
+void filterExcludedTitles(std::vector<u64>& titleIDs, const std::string& excludedTitleIds, const std::string& excludedTitleNames)
+{
+    std::set<u64> excludedIds;
+    if (!excludedTitleIds.empty())
+    {
+        for (const auto& hex : splitBy(excludedTitleIds, ","))
+        {
+            if (!hex.empty())
+            {
+                excludedIds.insert(fromHex<u64>(hex));
+            }
+        }
+    }
+
+    std::set<std::string> excludedNames;
+    if (!excludedTitleNames.empty())
+    {
+        for (const auto& name : splitBy(excludedTitleNames, "||"))
+        {
+            if (!name.empty())
+            {
+                excludedNames.insert(name);
+            }
+        }
+    }
+
+    titleIDs.erase(
+        std::remove_if(titleIDs.begin(), titleIDs.end(), [&](u64 titleID)
+        {
+            if (excludedIds.count(titleID))
+            {
+                return true;
+            }
+
+            if (!excludedNames.empty())
+            {
+                std::string titleName;
+                if (getTitleName(titleID, titleName) == 0 && excludedNames.count(titleName))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }),
+        titleIDs.end()
+    );
+}
+
+

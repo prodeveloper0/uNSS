@@ -8,6 +8,6 @@
 
 int getTitleName(const u64 titleID, std::string& titleName);
 int getTitleName(const u64 titleID, std::string& titleName, int language);
-int probeAllTitles(std::vector<u64>& titleIDs);
+int probeAllTitles(const AccountUid accountUid, std::vector<u64>& titleIDs);
 int probeSaveDataCreatedTitles(const AccountUid accountUid, std::vector<u64>& titleIDs);
-int probeTitlesBy(const std::string& probeBy, const AccountUid accountUid, std::vector<u64>& titleIDs);
+void filterExcludedTitles(std::vector<u64>& titleIDs, const std::string& excludedTitleIds, const std::string& excludedTitleNames);

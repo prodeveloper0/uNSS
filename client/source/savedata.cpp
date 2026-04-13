@@ -101,7 +101,7 @@ int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const Prob
 int archiveAllSaveData(AccountUid uid, const std::string& outputPath, const ProbeTitlesFunc& probeFunc, const std::function<bool(int, int, u64)>& callback, const std::function<bool(int, int, int, u64)>& doneCallback)
 {
     std::vector<u64> titleIDs;
-    if (probeFunc(titleIDs) != 0)
+    if (probeFunc(uid, titleIDs) != 0)
     {
         return SAVEDATA_FAILED_TO_PROBE_TITLES;
     }
