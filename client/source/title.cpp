@@ -6,8 +6,6 @@
 #include <algorithm>
 #include <set>
 
-#include "tui.hpp"
-
 
 int getTitleName(const u64 titleID, std::string& titleName)
 {

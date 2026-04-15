@@ -14,12 +14,12 @@ public:
     ZipWriter& operator=(const ZipWriter&) = delete;
 
     ZipWriter();
-    ZipWriter(ZipWriter&& other);
+    ZipWriter(ZipWriter&& other) noexcept;
     ZipWriter(const std::string& zipPath);
 
     virtual ~ZipWriter();
 
-	ZipWriter& operator=(ZipWriter&& other);
+	ZipWriter& operator=(ZipWriter&& other) noexcept;
 
 public:
     bool add(const std::string& sourcePath, const std::string& destPath);
@@ -48,7 +48,7 @@ public:
 	ZipReader& operator=(const ZipReader&) = delete;
 
     ZipReader();
-	ZipReader(ZipReader&& other);
+	ZipReader(ZipReader&& other) noexcept;
 	ZipReader(const std::string& zipPath);
 
 	virtual ~ZipReader();

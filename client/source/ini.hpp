@@ -269,11 +269,11 @@ public:
 };
 
 template<>
-const char* Config_<>::ws = " \t\n\r\f\v";
+inline const char* Config_<>::ws = " \t\n\r\f\v";
 template<>
-const char* Config_<>::wsSection = " \t\n\r\f\v[]";
+inline const char* Config_<>::wsSection = " \t\n\r\f\v[]";
 template<>
-const char* Config_<>::wsProperty = " \t\n\r\f\v\'\"";
+inline const char* Config_<>::wsProperty = " \t\n\r\f\v\'\"";
 
 class Config : public Config_<>
 {

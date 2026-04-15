@@ -5,9 +5,6 @@
 #include <vector>
 
 
-#include "tui.hpp"
-
-
 static int findUserByNickname(const std::string& nickname, AccountUid* outUid)
 {
     if (nickname.empty())
@@ -124,7 +121,7 @@ int getCurrentAccount(Account* account, const AccountResolveOptions& options)
     Result rc = accountInitialize(AccountServiceType_System);
     if (R_FAILED(rc))
     {
-        drawText("Failed to initialize account service");
+        // Failed to initialize account service
         goto cleanup;
     }
 
@@ -151,11 +148,11 @@ int getCurrentAccount(Account* account, const AccountResolveOptions& options)
     {
         if (!options.useProfileSelector)
         {
-            drawText("useProfileSelector=0 but [account] defaultAccountName is empty");
+            // useProfileSelector=0 but defaultAccountName is empty
         }
         else
         {
-            drawText("Failed to resolve account: set [account] defaultAccountName as fallback");
+            // Failed to resolve account: set defaultAccountName as fallback
         }
         goto cleanup;
     }
@@ -163,7 +160,7 @@ int getCurrentAccount(Account* account, const AccountResolveOptions& options)
     // 설정 파일에 저장된 어카운트 이름으로 조회
     if (findUserByNickname(options.defaultAccountName, &uid) != 0)
     {
-        drawText("No account matches '" + options.defaultAccountName + "'");
+        // No account matches defaultAccountName
         goto cleanup;
     }
 
@@ -171,14 +168,14 @@ processAccountProfile:
     rc = accountGetProfile(&profile, uid);
     if (R_FAILED(rc))
     {
-        drawText("Failed to get profile");
+        // Failed to get profile
         goto cleanup;
     }
 
     rc = accountProfileGet(&profile, NULL, &profileBase);
     if (R_FAILED(rc))
     {
-        drawText("Failed to get profile base");
+        // Failed to get profile base
         goto cleanup;
     }
 

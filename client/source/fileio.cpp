@@ -9,8 +9,6 @@
 #include <dirent.h>
 #include <fcntl.h>
 
-#include "tui.hpp"
-
 
 int walk(const std::string& path, std::function<void(const std::string&, bool isDir)> callback)
 {

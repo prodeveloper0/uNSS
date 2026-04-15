@@ -6,8 +6,8 @@ central remote server manages save data with internal revision IDs for each user
 # Usages
 ## Client
 ![uNSS Client Screen](resources/clientscreen.jpg)
-* How save data to push to remote? __JUST PRESS `A` BUTTON__.
-* How save data to pull from remote? __JUST PRESS `B` BUTTON__.
+* How save data to push to remote? __JUST PRESS PUSH BUTTON__.
+* How save data to pull from remote? __JUST PRESS PULL BUTTON__.
 
 ### Configuration
 To use remote server synchronization, you must configure settings first. and uNSS client reads settings from `sdmc:/uNSS/config.ini`
@@ -85,7 +85,3 @@ python main.py --host 0.0.0.0 --port 8989
 
 ### Windows
 Just used prebuilt binary by PyInstaller
-
-
-# Limitations
-* In applet mode (e.g. hbmenu launched via the album applet), the Switch user cannot be picked from the system's profile selector — you must set `[account] defaultAccountName` in `config.ini`. See the Configuration section above.

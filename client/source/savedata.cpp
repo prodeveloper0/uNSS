@@ -6,7 +6,6 @@
 #include "zipio.hpp"
 
 #include "utils.hpp"
-#include "tui.hpp"
 
 
 int archiveSaveData(AccountUid uid, const u64 titleID, const std::string& outputPath)
@@ -195,14 +194,8 @@ int restoreSaveData(AccountUid uid, const u64 titleID, const std::string& source
         {
             const std::string savePath = "save:/" + path.substr(strlen("saves/"));
 
-            drawText("* " + path + " -> " + savePath);
-
             success = extractOneFunc(savePath);
 
-            if (!success)
-            {
-                drawText("Failed to extract save data: " + savePath);
-            }
 
             if (success)
             {
@@ -213,7 +206,7 @@ int restoreSaveData(AccountUid uid, const u64 titleID, const std::string& source
         else if (startWith(path, "bcat/"))
         {
             const std::string bcatPath = "bcat:/" + path.substr(strlen("bcat/"));
-            drawText("* " + path + " -> " + bcatPath);
+            // bcat extract
             success = extractOneFunc(bcatPath);
             if (success)
             {
