@@ -240,6 +240,26 @@ public:
 	}
 
 public:
+        bool save(const std::string& filename)
+        {
+            std::ofstream ofs(filename);
+            if(!ofs.is_open()) return false;
+
+            for(auto const& section : config)
+            {
+                ofs << "[" << section.first << "]\n";
+                for(auto const& prop : section.second.properties)
+                {
+                    // Quote the value if it has spaces or special chars, otherwise write direct
+                    ofs << prop.first << "=\"" << prop.second.value << "\"\n";
+                }
+                ofs << "\n";
+            }
+            ofs.close();
+            return true;
+        }
+				
+public:
 	Property& operator [] (const std::string& s)
 	{
 		auto it = config.find(s);

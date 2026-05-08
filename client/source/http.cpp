@@ -79,7 +79,7 @@ size_t HTTPClient::readCallback(void* ptr, size_t size, size_t nmemb, void* user
     HTTPClient* client = static_cast<HTTPClient*>(userp);
     if (!client || !client->onSend) 
     {
-        return size * nmemb;
+        return 0;
     }
 
     size_t actualSize = 0;
@@ -112,7 +112,9 @@ int HTTPClient::perform()
 
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-
+    
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "uNSS/1.0");
     // HTTP 메서드 설정
     if (method == "GET") 
     {
@@ -121,6 +123,10 @@ int HTTPClient::perform()
     else if (method == "POST") 
     {
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        if (!onSend) 
+        {
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0L);
+        }
     }
 
     // 비동기 모드 설정

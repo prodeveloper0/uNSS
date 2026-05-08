@@ -9,33 +9,21 @@ namespace gui
 
 bool Renderer::loadSystemFont()
 {
-    PlFontData koFont;
+    PlFontData sysFont;
     Result rc = plInitialize(PlServiceType_User);
     if (R_FAILED(rc))
         return false;
 
-    // 한글 폰트 로드 (영문/숫자도 포함)
-    rc = plGetSharedFontByType(&koFont, PlSharedFontType_KO);
+    rc = plGetSharedFontByType(&sysFont, PlSharedFontType_Standard);
     if (R_FAILED(rc))
     {
-        // fallback: Standard 폰트
-        PlFontData stdFont;
-        rc = plGetSharedFontByType(&stdFont, PlSharedFontType_Standard);
-        if (R_FAILED(rc))
-        {
-            plExit();
-            return false;
-        }
-        this->fontDataSize = stdFont.size;
-        this->fontData = malloc(stdFont.size);
-        memcpy(this->fontData, stdFont.address, stdFont.size);
         plExit();
-        return true;
+        return false;
     }
 
-    this->fontDataSize = koFont.size;
-    this->fontData = malloc(koFont.size);
-    memcpy(this->fontData, koFont.address, koFont.size);
+    this->fontDataSize = sysFont.size;
+    this->fontData = malloc(sysFont.size);
+    memcpy(this->fontData, sysFont.address, sysFont.size);
 
     plExit();
     return true;
