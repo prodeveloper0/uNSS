@@ -1,3 +1,4 @@
+#include "TitleSelectionScreen.hpp"
 #include "MainScreen.hpp"
 #include "ProgressScreen.hpp"
 #include "AccountScreen.hpp"
@@ -87,9 +88,9 @@ void MainScreen::rebuildMenu()
 
         menuItems.push_back({"Push to Server", [this]() { startPush(); }, remoteEnabled});
         menuItems.push_back({"Pull from Server", [this]() { startPull(); }, true});
+        menuItems.push_back({"Select Games", [this]() { App::instance().pushScreen(new TitleSelectionScreen(config, account.uid)); }, true});
     }
 }
-
 
 void MainScreen::update(u64 kDown)
 {

@@ -11,7 +11,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 
 APP_TITLE=micro NX Save Sync
 APP_AUTHOR=prodeveloper0
-APP_VERSION=1.0.0
+APP_VERSION=1.0.1
 APP_TITLEID=uNSS
 
 #---------------------------------------------------------------------------------

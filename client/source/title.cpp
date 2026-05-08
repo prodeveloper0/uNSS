@@ -15,48 +15,57 @@ int getTitleName(const u64 titleID, std::string& titleName)
 
 int getTitleName(const u64 titleID, std::string& titleName, int language)
 {
-    const Defer defer(
-        [&]()
-        {
-            nsInitialize();
-        },
-        [&]()
-        {
-            nsExit();
-        }
-    );
+    const Defer defer([&]() { nsInitialize(); }, [&]() { nsExit(); });
 
     NsApplicationControlData controlData = {0x00,};
     size_t actualSize;
 
     Result rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, titleID, &controlData, sizeof(controlData), &actualSize);
-  
-    if (R_SUCCEEDED(rc)) 
+    
+    // If the game is deleted or is homebrew, the OS literally does not have the name anymore.
+    if (R_FAILED(rc)) 
     {
-        if (language == -1)
-        {
-            // Use device preferred language
-            NacpLanguageEntry *langentry;
-            rc = nacpGetLanguageEntry(&controlData.nacp, &langentry);
-            if (R_SUCCEEDED(rc))
-            {
-                char buf[0x201] = {0x00, };
-                strncpy(buf, langentry->name, 0x200);
-                titleName = buf;
-            }
-        }
-        else
-        {
-            // Use specified language
-            char buf[0x201] = {0x00, };
-            strncpy(buf, controlData.nacp.lang[language].name, 0x200);
-            titleName = buf;
-        }
-
-        return 0;
+        return -1; 
     }
 
-    return -1;
+    NacpLanguageEntry *langentry = NULL;
+
+    if (language == -1) 
+    {
+        // Try to get the system preferred language first
+        if (R_FAILED(nacpGetLanguageEntry(&controlData.nacp, &langentry))) 
+        {
+            langentry = NULL;
+        }
+    } 
+    else 
+    {
+        langentry = &controlData.nacp.lang[language];
+    }
+
+    
+    if (langentry == NULL || langentry->name[0] == '\0') 
+    {
+        for (int i = 0; i < 16; i++) 
+        {
+            if (controlData.nacp.lang[i].name[0] != '\0') 
+            {
+                langentry = &controlData.nacp.lang[i];
+                break;
+            }
+        }
+    }
+
+    
+    if (langentry != NULL && langentry->name[0] != '\0') 
+    {
+        char buf[0x201] = {0x00, };
+        strncpy(buf, langentry->name, 0x200);
+        titleName = buf;
+        return 0; // Success
+    }
+
+    return -1; // Completely failed
 }
 
 
@@ -156,14 +165,18 @@ static std::vector<std::string> splitBy(const std::string& str, const std::strin
     return tokens;
 }
 
-
 void filterExcludedTitles(std::vector<u64>& titleIDs, const std::string& excludedTitleIds, const std::string& excludedTitleNames)
 {
+    // Note: We leave the excludedTitleNames parameter to avoid breaking the header signature,
+    // but we completely ignore it in the implementation.
+
     std::set<u64> excludedIds;
     if (!excludedTitleIds.empty())
     {
-        for (const auto& hex : splitBy(excludedTitleIds, ","))
+        for (auto hex : splitBy(excludedTitleIds, ","))
         {
+            hex.erase(0, hex.find_first_not_of(" \t\r\n"));
+            hex.erase(hex.find_last_not_of(" \t\r\n") + 1);
             if (!hex.empty())
             {
                 excludedIds.insert(fromHex<u64>(hex));
@@ -171,39 +184,13 @@ void filterExcludedTitles(std::vector<u64>& titleIDs, const std::string& exclude
         }
     }
 
-    std::set<std::string> excludedNames;
-    if (!excludedTitleNames.empty())
-    {
-        for (const auto& name : splitBy(excludedTitleNames, "||"))
-        {
-            if (!name.empty())
-            {
-                excludedNames.insert(name);
-            }
-        }
-    }
-
+    // Remove any ID that exists in our exclusion set
     titleIDs.erase(
         std::remove_if(titleIDs.begin(), titleIDs.end(), [&](u64 titleID)
         {
-            if (excludedIds.count(titleID))
-            {
-                return true;
-            }
-
-            if (!excludedNames.empty())
-            {
-                std::string titleName;
-                if (getTitleName(titleID, titleName) == 0 && excludedNames.count(titleName))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return excludedIds.count(titleID) > 0;
         }),
         titleIDs.end()
     );
 }
-
 
