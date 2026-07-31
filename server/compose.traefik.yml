@@ -4,24 +4,19 @@
 # reverse proxy. The container publishes no port of its own — Traefik reaches
 # it inside the docker network and terminates TLS on 443.
 #
-# Requires two things outside this file:
+# Requires an external docker network named `traefik`, and one variable:
 #
-# 1. An external docker network named `traefik`.
+#   UNSS_BASICAUTH_USERS   htpasswd line, e.g.  switch:$2y$05$...
+#                          created with:  htpasswd -nbB switch '<password>'
 #
-# 2. A basicAuth middleware `unss-auth` in Traefik's dynamic configuration.
-#    The Switch client cannot follow redirects, so a login flow (authelia,
-#    OIDC) will never work — libcurl does however send credentials taken
-#    straight from the URL (https://user:pass@host).
+# Keep that value out of this file. Supply it from a secret store (OpenMedia-
+# Vault users can have locket pull it from OpenBao) or, failing that, from an
+# .env file that is not committed.
 #
-#      http:
-#        middlewares:
-#          unss-auth:
-#            basicAuth:
-#              users:
-#                - "switch:$2y$05$..."   # htpasswd -nbB switch '<password>'
-#
-#    Note: no $$ escaping in the dynamic file — that is only needed when the
-#    hash sits in a docker-compose label.
+# Why basicAuth and not a proper login: the Switch client does not follow
+# redirects, so any redirect-based flow (authelia, OIDC) can never complete.
+# libcurl does however send credentials taken straight from the URL, which
+# means https://user:pass@host works without touching the client at all.
 #
 # The router rule is not set here on purpose: it comes from Traefik's
 # defaultRule, which derives the host name from the compose service name.
@@ -29,7 +24,7 @@
 
 services:
   unss:
-    image: unss-server:2026-07-31
+    image: ghcr.io/dmuix/unss-server:latest
     container_name: unss
     environment:
       TZ: ${TZ}
@@ -46,7 +41,12 @@ services:
       # The image exposes no port — without this label Traefik builds no
       # router at all and answers 404.
       traefik.http.services.unss.loadbalancer.server.port: "8989"
-      traefik.http.routers.unss.middlewares: "unss-auth@file"
+      # Defined here rather than in Traefik's dynamic config so the hash can
+      # come from a variable instead of sitting in a file in plain text.
+      # Compose interpolates the value once; the `$` inside a bcrypt hash is
+      # therefore NOT doubled here (that is only needed for literal hashes).
+      traefik.http.middlewares.unss-auth.basicauth.users: "${UNSS_BASICAUTH_USERS}"
+      traefik.http.routers.unss.middlewares: "unss-auth"
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request;urllib.request.urlopen('http://localhost:8989/users/healthcheck/saves')\" || exit 1"]
       interval: "30s"
