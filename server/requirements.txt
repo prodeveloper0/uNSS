@@ -4,3 +4,4 @@ aiosqlite
 uvicorn
 python-multipart
 click
+uvloop
