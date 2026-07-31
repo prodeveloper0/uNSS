@@ -6,12 +6,36 @@
 #
 # Requires an external docker network named `traefik`, and one variable:
 #
-#   UNSS_BASICAUTH_USERS   htpasswd line, e.g.  switch:$2y$05$...
-#                          created with:  htpasswd -nbB switch '<password>'
+#   UNSS_BASICAUTH_USERS   htpasswd line, e.g.  switch:$2y$12$...
+#                          created with:  htpasswd -nbBC 12 switch '<password>'
 #
-# Keep that value out of this file. Supply it from a secret store (OpenMedia-
-# Vault users can have locket pull it from OpenBao) or, failing that, from an
-# .env file that is not committed.
+# Note the explicit cost of 12. htpasswd defaults to 5, which is far too low
+# today (measured: 19 ms per attempt versus 167 ms at 12). Traefik's basicAuth
+# only accepts MD5, SHA1 or bcrypt — argon2 is not supported — so the cost
+# factor and a long random password are the only things carrying the security
+# here.
+#
+# Keep that value out of this file. Supply it from an .env file that is not
+# committed, or from a secret store. With OpenMediaVault's compose plugin,
+# locket can pull it from OpenBao — add a service like this and the variable
+# is available to the interpolation below:
+#
+#   locket:
+#     provider:
+#       type: locket
+#       options:
+#         provider: bao
+#         bao-url: http://127.0.0.1:8200
+#         bao-role-id: <role id>
+#         bao-secret-id: file:/path/to/role-secret-id
+#         raw: true
+#         env:
+#           - UNSS_BASICAUTH_USERS={{bao://secret/unss/UNSS_BASICAUTH_USERS}}
+#
+# That block is deliberately left commented out: it is specific to one
+# deployment, and a bcrypt hash of a long random password is not worth a
+# secret store round trip on its own. What matters is that the hash does not
+# end up in version control.
 #
 # Why basicAuth and not a proper login: the Switch client does not follow
 # redirects, so any redirect-based flow (authelia, OIDC) can never complete.
