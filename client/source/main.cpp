@@ -33,6 +33,10 @@ void initConfig()
     gl_Config["title"]["restoreBy"].has("all");
     gl_Config["title"]["excludedTitleIds"].has("");
     gl_Config["title"]["excludedTitleNames"].has("");
+    gl_Config["sync"]["autoPushOnLaunch"].has(false);
+    gl_Config["sync"]["autoPushIntervalHours"].has(24);
+    // 백업은 콘솔 전체가 대상인 편이 자연스럽다. sysmodule 이 이 값을 읽는다.
+    gl_Config["sync"]["allAccounts"].has(true);
 }
 
 
