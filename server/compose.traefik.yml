@@ -1,0 +1,59 @@
+# uNSS server behind Traefik.
+#
+# Alternative to docker-compose.yaml for setups that already run Traefik as
+# reverse proxy. The container publishes no port of its own — Traefik reaches
+# it inside the docker network and terminates TLS on 443.
+#
+# Requires two things outside this file:
+#
+# 1. An external docker network named `traefik`.
+#
+# 2. A basicAuth middleware `unss-auth` in Traefik's dynamic configuration.
+#    The Switch client cannot follow redirects, so a login flow (authelia,
+#    OIDC) will never work — libcurl does however send credentials taken
+#    straight from the URL (https://user:pass@host).
+#
+#      http:
+#        middlewares:
+#          unss-auth:
+#            basicAuth:
+#              users:
+#                - "switch:$2y$05$..."   # htpasswd -nbB switch '<password>'
+#
+#    Note: no $$ escaping in the dynamic file — that is only needed when the
+#    hash sits in a docker-compose label.
+#
+# The router rule is not set here on purpose: it comes from Traefik's
+# defaultRule, which derives the host name from the compose service name.
+# Renaming the service therefore changes the URL.
+
+services:
+  unss:
+    image: unss-server:2026-07-31
+    container_name: unss
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - ./savedata:/app/savedata
+      # Must already exist as a FILE. If it does not, docker creates a
+      # directory with that name and the server fails to start.
+      - ./metadata.sqlite:/app/metadata.sqlite
+    restart: unless-stopped
+    networks:
+      traefik:
+    labels:
+      traefik.enable: "true"
+      # The image exposes no port — without this label Traefik builds no
+      # router at all and answers 404.
+      traefik.http.services.unss.loadbalancer.server.port: "8989"
+      traefik.http.routers.unss.middlewares: "unss-auth@file"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request;urllib.request.urlopen('http://localhost:8989/users/healthcheck/saves')\" || exit 1"]
+      interval: "30s"
+      timeout: "5s"
+      retries: 3
+      start_period: "10s"
+
+networks:
+  traefik:
+    external: true
