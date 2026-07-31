@@ -1,0 +1,57 @@
+#pragma once
+
+#include <functional>
+#include <string>
+
+#include <switch.h>
+
+
+// 동기화 진행 상황을 알리는 콜백. GUI 든 콘솔이든 동일하게 사용한다.
+using SyncLogFunc = std::function<void(const std::string&)>;
+
+
+struct SyncOptions
+{
+    AccountUid uid = {};
+    std::string nickname;
+    std::string saveDataPath;
+    std::string serverUrl;
+    bool remoteEnabled = false;
+
+    // "created" 또는 "all"
+    std::string archiveBy = "created";
+    std::string restoreBy = "all";
+
+    std::string excludedTitleIds;
+    std::string excludedTitleNames;
+
+    // 마지막 업로드 이후 바뀌지 않은 타이틀은 건너뛴다.
+    bool skipUnchanged = true;
+};
+
+
+// 게임이 실행 중인가. 실행 중이면 세이브가 열려 있을 수 있어
+// 그 상태의 백업은 일관성을 보장하지 못한다.
+bool isGameRunning();
+
+// 세이브가 마지막 동기화 이후 바뀌었는지. 판단 근거는 세이브 안의
+// 가장 최근 수정 시각이다. 기록이 없으면 항상 true.
+bool hasSaveDataChanged(const SyncOptions& options, u64 titleID);
+
+// 업로드에 성공한 뒤 현재 상태를 기록해 둔다.
+void markSaveDataSynced(const SyncOptions& options, u64 titleID);
+
+
+// 모든 세이브를 아카이브한 뒤 서버로 업로드한다.
+int pushAllSaves(const SyncOptions& options, SyncLogFunc log);
+
+// 서버에서 내려받아 복원한다. remoteEnabled 가 false 면 로컬 아카이브에서 복원한다.
+int pullAllSaves(const SyncOptions& options, SyncLogFunc log);
+
+
+// 마지막 자동 동기화 시각 (Unix time) 을 기록하는 파일. 없으면 0 을 반환한다.
+time_t readLastAutoSyncTime(const std::string& saveDataPath);
+void writeLastAutoSyncTime(const std::string& saveDataPath, time_t when);
+
+// intervalHours 가 지났는지 확인한다. intervalHours <= 0 이면 항상 true.
+bool isAutoSyncDue(const std::string& saveDataPath, int intervalHours);
