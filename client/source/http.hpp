@@ -40,6 +40,20 @@ public:
     ~HTTPClient();
 
 public:
+    // 인증서 검증을 켜고 끈다. 프로세스 전체에 적용되며 기본값은 켜짐.
+    //
+    // 자격증명은 URL 에 들어 있고 libcurl 이 그것을 Authorization 헤더로 먼저
+    // 보낸다. 검증이 꺼져 있으면 핸드셰이크에 응답하는 누구나 평문 비밀번호를
+    // 받는다 - bcrypt 는 서버에 저장된 해시를 지킬 뿐 이 구간과는 무관하다.
+    //
+    // 끄는 길을 남겨둔 이유는 하나다: 이 curl 은 libnx SSL 백엔드라 콘솔에
+    // 내장된 인증서 목록으로 검증하고, 그 목록은 펌웨어와 함께만 갱신된다.
+    // 사설 CA 나 콘솔이 모르는 루트를 쓰면 서버가 멀쩡해도 거절당하고, 그
+    // 실패는 "연결 안 됨" 처럼 보인다. 그때는 sdmc:/uNSS/cacert.pem 에 루트를
+    // 두는 것이 먼저고, 이 스위치는 마지막 수단이다.
+    static void setVerifyTls(bool enabled);
+
+public:
     HTTPClient& setUrl(const std::string& url);
     HTTPClient& setMethod(const std::string& method);
     HTTPClient& setHeader(const std::string& key, const std::string& value);

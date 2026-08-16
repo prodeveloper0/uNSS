@@ -1,6 +1,7 @@
 #include "MainScreen.hpp"
 #include "ProgressScreen.hpp"
 #include "AccountScreen.hpp"
+#include "LogScreen.hpp"
 
 #include "../title.hpp"
 #include "../savedata.hpp"
@@ -87,7 +88,77 @@ void MainScreen::rebuildMenu()
 
         menuItems.push_back({"Push to Server", [this]() { startPush(); }, remoteEnabled});
         menuItems.push_back({"Pull from Server", [this]() { startPull(); }, true});
+
+        // 첫 설치만 사용자가 직접 고르게 한다. 부팅 때 도는 프로세스가
+        // 생기는 일이라 몰래 해서는 안 된다.
+        const sysmodule::State state = sysmodule::getState();
+
+        if (state == sysmodule::State::NotInstalled)
+            menuItems.push_back({"Install background service", [this]() { installSysmodule(); }, true});
+        else if (state == sysmodule::State::Interrupted)
+        {
+            // 지난 실행이 끝까지 가지 못해 스스로 꺼져 있다. 모듈이 죽었을
+            // 수도, 백업 도중에 콘솔을 껐을 수도 있다. 알아서 되살리지
+            // 않는다 - 전자라면 켜는 순간 같은 일이 반복된다.
+            menuItems.push_back({"Re-enable background service", [this]() { resumeSysmodule(); }, true});
+            menuItems.push_back({"Remove background service", [this]() { uninstallSysmodule(); }, true});
+        }
+        else
+            menuItems.push_back({"Remove background service", [this]() { uninstallSysmodule(); }, true});
+
+        // 설치되지 않았다면 보여줄 로그도 없다.
+        if (state != sysmodule::State::NotInstalled)
+            menuItems.push_back({"Show service log", []()
+            {
+                App::instance().pushScreen(new LogScreen());
+            }, true});
     }
+}
+
+
+// 이미 설치돼 있는데 NRO 쪽이 더 새것이면 조용히 갱신한다.
+// 쓰겠다는 결정은 이미 내려진 상태이고, 앱과 모듈이 어긋나면 곤란하다.
+void MainScreen::updateSysmoduleIfOutdated()
+{
+    if (sysmodule::getState() != sysmodule::State::Outdated) return;
+
+    if (sysmodule::install() == 0)
+        statusMessage = "Background service updated. Reboot to apply.";
+    else
+        statusMessage = "Failed to update background service.";
+}
+
+
+void MainScreen::installSysmodule()
+{
+    if (sysmodule::install() == 0)
+        statusMessage = "Installed. Reboot to activate.";
+    else
+        statusMessage = "Install failed. Is the SD card writable?";
+
+    rebuildMenu();
+}
+
+
+void MainScreen::uninstallSysmodule()
+{
+    if (sysmodule::uninstall() == 0)
+        statusMessage = "Removed. Reboot to take effect.";
+    else
+        statusMessage = "Remove failed.";
+
+    rebuildMenu();
+}
+
+
+void MainScreen::resumeSysmodule()
+{
+    if (sysmodule::resume() == 0)
+        statusMessage = "Re-enabled. Reboot to activate.";
+    else
+        statusMessage = "Could not re-enable. Is the SD card writable?";
+
+    rebuildMenu();
 }
 
 
@@ -102,6 +173,16 @@ void MainScreen::update(u64 kDown)
     }
 
     if (!accountResolved) return;
+
+    // 계정이 정해진 뒤 한 번만. 계정을 바꿨다고 다시 돌지 않는다.
+    if (!autoPushChecked)
+    {
+        autoPushChecked = true;
+        // 갱신이 먼저다. 아래에서 화면을 밀어버리면 돌아오지 않는다.
+        updateSysmoduleIfOutdated();
+        startAutoPushIfDue();
+        return;
+    }
 
     if (kDown & HidNpadButton_AnyUp)
     {
@@ -229,138 +310,88 @@ void MainScreen::render(Renderer& r)
         y += btnH + 10;
     }
 
+    if (!statusMessage.empty())
+    {
+        y += 10;
+        r.drawText(statusMessage, x, y, 18, COLOR_ACCENT);
+    }
+
     int fy = r.screenHeight() - 50;
     r.drawRect(x, fy - 10, r.screenWidth() - x * 2, 2, {80, 80, 80, 255});
     r.drawText("A: Select    -: Account    +: Exit", x, fy, 18, COLOR_DIM);
 }
 
 
+SyncOptions MainScreen::buildSyncOptions() const
+{
+    SyncOptions options;
+    options.uid = account.uid;
+    options.nickname = account.nickname;
+    options.saveDataPath = "sdmc:/uNSS/saves";
+    options.serverUrl = (std::string)config["remote"]["serverUrl"];
+    options.remoteEnabled = (bool)config["remote"]["enabled"];
+    options.archiveBy = config["title"]["archiveBy"].value;
+    options.restoreBy = config["title"]["restoreBy"].value;
+    options.excludedTitleIds = config["title"]["excludedTitleIds"].value;
+    options.excludedTitleNames = config["title"]["excludedTitleNames"].value;
+    return options;
+}
+
+
 void MainScreen::startPush()
 {
-    const std::string saveDataPath = "sdmc:/uNSS/saves";
-    const std::string serverUrl = (std::string)config["remote"]["serverUrl"];
-    const std::string archiveBy = config["title"]["archiveBy"].value;
-    const std::string excludedIds = config["title"]["excludedTitleIds"].value;
-    const std::string excludedNames = config["title"]["excludedTitleNames"].value;
-    const std::string nickname = account.nickname;
-    const AccountUid uid = account.uid;
+    const SyncOptions options = buildSyncOptions();
 
     auto work = [=](std::function<void(const std::string&)> log) -> int
     {
-        HTTPRemoteStore remoteStore(serverUrl, saveDataPath);
-        recursiveMkdir(saveDataPath.c_str());
-
-        const ProbeTitlesFunc probeFunc = [&](const AccountUid probeUid, std::vector<u64>& titleIDs) -> int
-        {
-            int ret = archiveBy == "all"
-                ? probeAllTitles(probeUid, titleIDs)
-                : probeSaveDataCreatedTitles(probeUid, titleIDs);
-            if (ret == 0)
-            {
-                filterExcludedTitles(titleIDs, excludedIds, excludedNames);
-            }
-            return ret;
-        };
-
-        return archiveAllSaveData(
-            uid,
-            saveDataPath,
-            probeFunc,
-            [&log](int total, int current, u64 titleID) -> bool
-            {
-                std::string titleName;
-                if (getTitleName(titleID, titleName) != 0)
-                    titleName = "Unknown";
-                log("[" + padding(current, 3) + "/" + padding(total, 3) + "] " + titleName);
-                return true;
-            },
-            [&log, &remoteStore, &nickname](int total, int current, int ret, u64 titleID) -> bool
-            {
-                if (ret != SAVEDATA_OK)
-                    log("Failed to archive, ret=" + std::to_string(ret));
-                else
-                {
-                    int pushRet = remoteStore.push(nickname, titleID);
-                    if (pushRet != 0)
-                        log("Failed to push, ret=" + std::to_string(pushRet));
-                }
-                return true;
-            }
-        );
+        return pushAllSaves(options, log);
     };
 
     App::instance().pushScreen(new ProgressScreen("Push to Server", std::move(work)));
 }
 
 
-void MainScreen::startPull()
+// 계정이 정해진 직후 호출된다. 자동 백업이 켜져 있고 마지막 실행에서
+// autoPushIntervalHours 가 지났으면 메뉴를 거치지 않고 바로 업로드한다.
+void MainScreen::startAutoPushIfDue()
 {
-    const std::string saveDataPath = "sdmc:/uNSS/saves";
-    const std::string serverUrl = (std::string)config["remote"]["serverUrl"];
-    const std::string restoreBy = config["title"]["restoreBy"].value;
-    const std::string excludedIds = config["title"]["excludedTitleIds"].value;
-    const std::string excludedNames = config["title"]["excludedTitleNames"].value;
-    const std::string nickname = account.nickname;
-    const AccountUid uid = account.uid;
-    const bool remoteEnabled = (bool)config["remote"]["enabled"];
+    if (!(bool)config["sync"]["autoPushOnLaunch"]) return;
+    if (!(bool)config["remote"]["enabled"]) return;
+
+    // 게임이 돌고 있으면 세이브가 열려 있을 수 있다. 그 상태로 뜬 백업은
+    // 반쯤 쓰인 파일을 담을 수 있으므로 자동 백업은 미룬다.
+    // 수동 "Push to Server" 는 사용자가 알고 누르는 것이라 막지 않는다.
+    if (isGameRunning())
+    {
+        statusMessage = "Game is running - automatic backup postponed.";
+        return;
+    }
+
+    const SyncOptions options = buildSyncOptions();
+    const int intervalHours = atoi(config["sync"]["autoPushIntervalHours"].value.c_str());
+
+    if (!isAutoSyncDue(options.saveDataPath, intervalHours)) return;
 
     auto work = [=](std::function<void(const std::string&)> log) -> int
     {
-        HTTPRemoteStore remoteStore(serverUrl, saveDataPath);
-        recursiveMkdir(saveDataPath.c_str());
+        int ret = pushAllSaves(options, log);
+        // 실패했다면 시각을 남기지 않는다. 다음 실행에서 다시 시도한다.
+        if (ret == 0)
+            writeLastAutoSyncTime(options.saveDataPath, time(NULL));
+        return ret;
+    };
 
-        if (!remoteEnabled)
-        {
-            log("Remote is disabled, restoring from local...");
-            return restoreAllSaveData(
-                uid, saveDataPath,
-                [&log](int total, int current, u64 titleID) -> bool
-                {
-                    std::string titleName;
-                    if (getTitleName(titleID, titleName) != 0)
-                        titleName = "Unknown";
-                    log("[" + padding(current, 3) + "/" + padding(total, 3) + "] " + titleName);
-                    return true;
-                },
-                [&log](int total, int current, int ret, u64 titleID) -> bool
-                {
-                    if (ret != SAVEDATA_OK)
-                        log("Failed to restore, ret=" + std::to_string(ret));
-                    return true;
-                }
-            );
-        }
+    App::instance().pushScreen(new ProgressScreen("Auto Backup", std::move(work)));
+}
 
-        std::vector<u64> titleIDs;
-        int probeRet = restoreBy == "all"
-            ? probeAllTitles(uid, titleIDs)
-            : probeSaveDataCreatedTitles(uid, titleIDs);
-        if (probeRet == 0)
-            filterExcludedTitles(titleIDs, excludedIds, excludedNames);
-        if (probeRet != 0)
-        {
-            log("Failed to probe titles");
-            return probeRet;
-        }
 
-        for (size_t i = 0; i < titleIDs.size(); ++i)
-        {
-            std::string titleName;
-            if (getTitleName(titleIDs[i], titleName) != 0)
-                titleName = "Unknown";
-            log("[" + padding(i + 1, 3) + "/" + padding(titleIDs.size(), 3) + "] " + titleName);
+void MainScreen::startPull()
+{
+    const SyncOptions options = buildSyncOptions();
 
-            if (remoteStore.pull(nickname, titleIDs[i]) != 0)
-            {
-                log("Failed to pull from server");
-            }
-            else
-            {
-                restoreSaveData(uid, titleIDs[i], saveDataPath);
-            }
-        }
-
-        return 0;
+    auto work = [=](std::function<void(const std::string&)> log) -> int
+    {
+        return pullAllSaves(options, log);
     };
 
     App::instance().pushScreen(new ProgressScreen("Pull from Server", std::move(work)));

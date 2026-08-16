@@ -4,6 +4,8 @@
 
 #include <string.h>
 #include <algorithm>
+#include <memory>
+#include <new>
 #include <set>
 
 
@@ -26,12 +28,29 @@ int getTitleName(const u64 titleID, std::string& titleName, int language)
         }
     );
 
-    NsApplicationControlData controlData = {0x00,};
+    // 스택이 아니라 힙이다. 이 구조체는 nacp 뒤에 0x20000 짜리 아이콘이
+    // 붙어 있어 0x24000 - 144KB 다. 앱에서는 스택이 넉넉해 문제가 없지만
+    // 시스템 모듈의 메인 스레드 스택은 16KB (config.json) 라, 스택에 두면
+    // 함수 프롤로그에서 곧바로 넘친다. 실제로 그랬다: 2168-0002 data abort,
+    // getTitleName+0x8.
+    //
+    // make_unique 가 아니라 nothrow new 다. 시스템 모듈은 -fno-exceptions 로
+    // 빌드되는데 (client-sysmodule/Makefile) 힙은 2MiB 뿐이다. 할당이 실패하면
+    // operator new 가 던지는 bad_alloc 을 받을 곳이 없어 그대로 abort 로 간다 -
+    // 스택이 넘치던 것과 똑같이 모듈이 죽는다. 이 함수에는 이미 -1 로 물러나는
+    // 길이 있으니 그쪽으로 보낸다. new(nothrow) T() 는 값 초기화라 0 으로
+    // 채워져 나오므로 memset 은 따로 필요 없다.
+    const std::unique_ptr<NsApplicationControlData> controlDataHolder(
+        new (std::nothrow) NsApplicationControlData());
+    if (!controlDataHolder) return -1;
+
+    NsApplicationControlData& controlData = *controlDataHolder;
+
     size_t actualSize;
 
     Result rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, titleID, &controlData, sizeof(controlData), &actualSize);
-  
-    if (R_SUCCEEDED(rc)) 
+
+    if (R_SUCCEEDED(rc))
     {
         if (language == -1)
         {
@@ -123,7 +142,20 @@ int probeSaveDataCreatedTitles(const AccountUid accountUid, std::vector<u64>& ti
             break;
         }
 
-        if (info.save_data_type == FsSaveDataType_Account)
+        // 이 계정의 것만 담는다. fsOpenSaveDataInfoReader 는 콘솔에 있는 모든
+        // 세이브를 사용자 구분 없이 돌려주므로, 거르지 않으면 계정이 셋이든
+        // 넷이든 모두 똑같은 목록을 받는다.
+        //
+        // 그 상태에서는 남의 세이브를 자기 것으로 열려다 실패하고, 그 실패가
+        // "Failed to archive" 로 남았다 - 계정 하나당 스물세 번씩
+        // (2026-08-01, Fränk 와 joseph 이 26 개 중 23 개에서 그랬다).
+        // 고장이 아니라 "이 계정에는 그 세이브가 없다" 였다.
+        //
+        // 중복도 같은 이유로 사라진다: 한 게임을 세 사람이 저장해두면 목록에
+        // 세 번 들어와 있었고, 로그에도 같은 제목이 세 줄 찍혔다.
+        if (info.save_data_type == FsSaveDataType_Account
+            && info.uid.uid[0] == accountUid.uid[0]
+            && info.uid.uid[1] == accountUid.uid[1])
         {
             outputTitleIDs.push_back(info.application_id);
         }

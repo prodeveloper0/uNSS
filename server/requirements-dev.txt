@@ -1,0 +1,6 @@
+-r requirements.txt
+
+# 테스트에만 필요하다. 이미지에는 들어가지 않는다.
+pytest
+# TestClient 가 쓴다.
+httpx

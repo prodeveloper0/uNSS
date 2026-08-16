@@ -96,11 +96,15 @@ class SQLiteSaveDataRepository(BaseSaveDataRepository):
         sqlite3.connect(self.db_path).executescript(script).close()
 
     async def get_latest_revision_by_title(self, user_name: str, title_id: str) -> str:
+        # created_at 은 CURRENT_TIMESTAMP 라 초 단위다. 같은 초에 두 번 올리면
+        # 순서가 정해지지 않고, SQLite 는 먼저 찾은 것 - 대개 가장 오래된 것 -
+        # 을 준다. 복원할 때 지난 세이브를 받게 된다는 뜻이다.
+        # rowid 는 INSERT 순서대로 늘어나므로 이것으로 동점을 깬다.
         query = """
         SELECT UPPER(revision_id)
         FROM savedata
         WHERE user_name = ? AND title_id = UPPER(?) AND status = 'C'
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, rowid DESC
         LIMIT 1
         """
         async with aiosqlite.connect(self.db_path) as conn:
@@ -120,12 +124,24 @@ class SQLiteSaveDataRepository(BaseSaveDataRepository):
                 return result[0] if result else None
 
     async def query_all_latest_revision_by_user(self, user_name: str) -> Tuple[str, str]:
+        # GROUP BY ... HAVING MAX(created_at) 은 타이틀마다 한 줄로 줄여주긴
+        # 하지만, 그 한 줄이 어느 리비전인지는 정하지 않는다. 같은 초에 두 번
+        # 올리면 오래된 쪽이 나왔다 (실측).
+        #
+        # 타이틀마다 최신 한 줄을 명시적으로 고른다. 동점은 rowid 로 깬다 -
+        # get_latest_revision_by_title 과 같은 기준이어야 목록과 개별 조회가
+        # 서로 다른 답을 내놓지 않는다.
         query = """
-        SELECT UPPER(title_id), UPPER(revision_id)
-        FROM savedata
-        WHERE user_name = ? AND status = 'C'
-        GROUP BY title_id
-        HAVING MAX(created_at)
+        SELECT UPPER(s.title_id), UPPER(s.revision_id)
+        FROM savedata s
+        WHERE s.user_name = ? AND s.status = 'C'
+          AND s.rowid = (
+              SELECT rowid
+              FROM savedata
+              WHERE user_name = s.user_name AND title_id = s.title_id AND status = 'C'
+              ORDER BY created_at DESC, rowid DESC
+              LIMIT 1
+          )
         """
         async with aiosqlite.connect(self.db_path) as conn:
             async with conn.execute(query, (user_name,)) as cursor:

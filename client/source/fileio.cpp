@@ -2,6 +2,8 @@
 
 #include <string>
 #include <functional>
+#include <memory>
+#include <new>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,7 +82,14 @@ int recursiveMkdir(const std::string& path, mode_t mode)
 
 int createSaveData(const AccountUid accountUid, const u64 titleID)
 {
-    NsApplicationControlData controlData = {0x00,};
+    // 0x24000 - 144KB 짜리다. 시스템 모듈 스택은 16KB 뿐이라 스택에 두면
+    // 넘친다. 던지지 않는 new 를 쓰는 이유도 title.cpp 의 같은 구조체를 참고.
+    const std::unique_ptr<NsApplicationControlData> controlDataHolder(
+        new (std::nothrow) NsApplicationControlData());
+    if (!controlDataHolder) return -1;
+
+    NsApplicationControlData& controlData = *controlDataHolder;
+
     size_t actualSize;
 
     Result rc = nsInitialize();
@@ -143,6 +152,14 @@ int mountSaveData(const std::string& mountPoint, const AccountUid accountUid, co
     Result rc = fsdevMountSaveData(mountPoint.c_str(), titleID, accountUid);
     if (R_FAILED(rc))
     {
+        // "그런 세이브는 없다" 와 "열지 못했다" 는 다른 일이다. 앞의 것은
+        // 이 계정이 그 게임을 한 번도 저장하지 않았다는 뜻일 뿐이고, 흔하다.
+        // 둘을 뭉뚱그리면 정상적인 백업이 매번 오류로 끝난다.
+        if (R_MODULE(rc) == 2 && R_DESCRIPTION(rc) == 1002)   // fs: TargetNotFound
+        {
+            return MOUNT_TARGET_NOT_FOUND;
+        }
+
         return -1;
     }
 

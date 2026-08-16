@@ -31,9 +31,20 @@ private:
     std::string serverUrl;
     std::string saveDataPath;
 
+    // 마지막으로 실패한 HTTP 호출이 돌려준 값 그대로. push / pull 은 실패를
+    // 전부 -1 로 뭉개기 때문에, 그것만 보면 "서버가 400 을 줬다" 와
+    // "연결조차 못 했다" 를 구별할 수 없다. 실제로 그 구별이 없어서 TLS 가
+    // 열리지 않는 것을 한참 못 찾았다 (2026-07-31). 반환값 규약은 그대로
+    // 두고, 원인만 여기에 남긴다.
+    int lastHttpResult = 0;
+
 public:
     HTTPRemoteStore(const std::string& serverUrl, const std::string& saveDataPath);
     ~HTTPRemoteStore();
+
+public:
+    // 음수면 HTTPCLIENT_ERROR_* (연결 자체가 안 된 것), 양수면 HTTP 상태 코드.
+    int getLastHttpResult() const { return lastHttpResult; }
 
 private:
     int _issueSaveDataRevisionId(const std::string userName, const u64 titleId, std::string& revisionId);

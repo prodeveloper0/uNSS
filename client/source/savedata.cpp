@@ -24,7 +24,13 @@ int archiveSaveData(AccountUid uid, const u64 titleID, const std::string& output
     );
 
 
-    if (mountSaveData("save", uid, titleID) != 0)
+    const int mountRet = mountSaveData("save", uid, titleID);
+    if (mountRet == MOUNT_TARGET_NOT_FOUND)
+    {
+        // 이 계정은 그 게임을 저장한 적이 없다. 올릴 것이 없을 뿐이다.
+        return SAVEDATA_NO_SAVE_DATA;
+    }
+    if (mountRet != 0)
     {
         return SAVEDATA_FAILED_TO_MOUNT;
     }

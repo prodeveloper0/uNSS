@@ -1,0 +1,235 @@
+# uNSS server behind Traefik.
+#
+# Alternative to docker-compose.yaml for setups that already run Traefik as
+# reverse proxy. The container publishes no port of its own — Traefik reaches
+# it inside the docker network and terminates TLS on 443.
+#
+# Requires an external docker network named `traefik`, and the credentials:
+#
+#   UNSS_USERNAME   user name, defaults to `switch`
+#   UNSS_PASSWORD   the password in plain text
+#
+# unss-auth-writer below hashes it with bcrypt at cost 12 and writes Traefik's
+# middleware. Supplying the hash yourself still works — set UNSS_BASICAUTH_USERS
+# to a full htpasswd line instead and the password is ignored.
+#
+# Hashing here rather than by hand exists so the store holds ONE value. The
+# same password has to reach the client as well (see below), and a hash cannot
+# be turned back into it — keeping both meant keeping them in sync by hand,
+# which is exactly the kind of thing that drifts apart unnoticed.
+#
+# On the cost of 12: htpasswd defaults to 5, far too low today (measured: 19 ms
+# per attempt versus 167 ms at 12). Traefik's basicAuth accepts only MD5, SHA1
+# or bcrypt — argon2 is not supported — so the cost factor and a long password
+# are the only things carrying the security here.
+#
+# Which characters the password may contain is NOT a free choice. The Switch
+# client takes its credentials from the URL in config.ini:
+#
+#   serverUrl=https://switch:<password>@unss.example.org
+#
+# and passes that string to libcurl unescaped. `/`, `?`, `#`, `@`, `%`, `[`
+# and `]` change how a URL is split and will break authentication in ways the
+# error message does not point at. Its INI parser also strips `'` and `"` from
+# both ends of a value. A long alphanumeric password avoids all of it —
+# length carries the entropy, not the variety of characters.
+#
+# Keep the credentials out of this file. Two ways to supply them:
+#
+# 1. From a secret store (what this file does). Rotating means changing the
+#    password there — nothing else moves.
+#
+# 2. From an .env file next to this one. Fewer moving parts, but the .env is
+#    then the source of truth. Under OpenMediaVault the stack's Environment
+#    field is that .env file.
+#
+#    An .env feeds ${...} interpolation of THIS file and nothing else — it does
+#    not reach a container on its own, and none of the credentials below are
+#    interpolated. So this route needs one more line on unss-auth-writer:
+#
+#      env_file:
+#        - .env
+#
+#    A plain password needs no escaping there; a ready-made hash does, since
+#    the doubled `$` is still collapsed on the way in:
+#
+#      UNSS_BASICAUTH_USERS=switch:$$2y$$12$$....
+#
+# What does NOT work is filling a label from a secret store. Compose resolves
+# ${...} while PARSING this file; a store injects values when the container
+# STARTS, and labels are fixed at create time. The label stays empty, and an
+# empty value is not a harmless default: Traefik drops a router whose
+# middleware is invalid, so the service answers 404 instead of asking for
+# credentials — which reads like a routing bug rather than an auth one.
+#
+# Why basicAuth and not a proper login: the Switch client does not follow
+# redirects, so any redirect-based flow (authelia, OIDC) can never complete.
+# libcurl does however send credentials taken straight from the URL, which
+# means https://user:pass@host works without touching the client at all.
+#
+# The router rule is not set here on purpose: it comes from Traefik's
+# defaultRule, which derives the host name from the compose service name.
+# Renaming the service therefore changes the URL.
+
+services:
+  # Turns the credentials into a Traefik middleware. This exists for one
+  # reason: a label cannot be filled from a secret store, a file can.
+  #
+  # Traefik reads labels from the docker daemon — container metadata, fixed at
+  # create time. It never looks inside the container, so the environment a
+  # secret store populates is invisible to it. Writing the value to Traefik's
+  # dynamic configuration crosses that boundary: the store fills this
+  # container's environment (which it can), and this container writes the file
+  # (which Traefik reads).
+  #
+  # Neither variable is declared under `environment:`. A secret store injects
+  # them at container start; declaring them here would let compose overwrite
+  # them with an empty string at parse time. Without such a store, add the
+  # `env_file:` line described above — an .env alone never reaches a container,
+  # it only feeds ${...} in the compose file, and nothing here interpolates
+  # these two. A hash in that file needs the doubled `$`, a plain password
+  # does not.
+  #
+  # The image is httpd only because it ships `htpasswd`. Nothing is served
+  # from it.
+  unss-auth-writer:
+    image: httpd:2.4-alpine
+    restart: unless-stopped
+    volumes:
+      # Traefik's dynamic configuration directory, writable here and mounted
+      # read-only in Traefik itself.
+      - ${TRAEFIK_DYNAMIC_DIR:-/srv/traefik/dynamic}:/dynamic
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        NAME="$${UNSS_USERNAME:-switch}"
+        # htpasswd takes the name as a bare argument and the finished line goes
+        # into a double-quoted YAML scalar. A leading `-` is read as an option
+        # (htpasswd then exits 2 and this container restarts forever), a `:`
+        # splits the line in the wrong place, and a `"` or `\` writes a file
+        # Traefik cannot parse. None of those say what went wrong, so refuse.
+        case "$$NAME" in
+          ''|-*|*:*|*'"'*|*\\*)
+            echo "UNSS_USERNAME is empty, starts with '-', or contains : \" \\ - refusing" >&2
+            exit 1 ;;
+        esac
+        if [ -n "$$UNSS_BASICAUTH_USERS" ]; then
+          # A ready-made htpasswd line — kept for setups that hash elsewhere.
+          # It wins over UNSS_PASSWORD, so remember which one was used: a
+          # rotation silently overridden by a leftover variable otherwise looks
+          # exactly like one that worked.
+          LINE="$$UNSS_BASICAUTH_USERS"
+          SOURCE="UNSS_BASICAUTH_USERS"
+        elif [ -n "$$UNSS_PASSWORD" ]; then
+          # Hash the plain password here, so the store holds one value a human
+          # can also type into the client instead of two that must be kept in
+          # sync. `-i` reads it from stdin: on the command line it would show
+          # up in the process list.
+          #
+          # bcrypt salts randomly, so this line differs on every start even
+          # though the password does not. Traefik reloads the file and carries
+          # on — the churn is cosmetic.
+          LINE="$$(printf '%s' "$$UNSS_PASSWORD" | htpasswd -niBC 12 "$$NAME")"
+          SOURCE="UNSS_PASSWORD (hashed here)"
+        else
+          echo "neither UNSS_PASSWORD nor UNSS_BASICAUTH_USERS is set - refusing to write an open middleware" >&2
+          exit 1
+        fi
+        # A colon alone is not enough of a check. `user:` with nothing behind
+        # it, and a hash that still carries the doubled dollars meant for
+        # compose interpolation, both keep the colon — and Traefik accepts each
+        # as a users entry that no password can ever satisfy. That is a total
+        # lockout which every other signal here reports as healthy.
+        case "$$LINE" in
+          *'"'*|*\\*)
+            echo "the htpasswd line contains a quote or backslash and would break the YAML - refusing" >&2
+            exit 1 ;;
+          *'$$$$'*)
+            echo "the htpasswd line still has doubled dollar signs - pass it via env_file, which does the un-escaping" >&2
+            exit 1 ;;
+        esac
+        case "$$LINE" in
+          ?*:?*) : ;;
+          *) echo "not an htpasswd line (expected user:hash) - refusing to write it" >&2; exit 1 ;;
+        esac
+        printf '%s\n' \
+          '# Generated by unss-auth-writer. Do not edit; overwritten on every start.' \
+          'http:' \
+          '  middlewares:' \
+          '    unss-auth:' \
+          '      basicAuth:' \
+          '        users:' \
+          "          - \"$$LINE\"" \
+          > /dynamic/unss-auth.yaml
+        # The user comes out of the line that was actually written, not out of
+        # UNSS_USERNAME: the two differ whenever UNSS_BASICAUTH_USERS won.
+        echo "wrote /dynamic/unss-auth.yaml for user $${LINE%%:*} (from $$SOURCE)"
+        # Stay alive so the healthcheck below can keep vouching for the file.
+        # Exiting would work too, but a stack that permanently shows one
+        # container as stopped trains you to ignore that display — and then
+        # you miss the time it means something.
+        exec sleep infinity
+    healthcheck:
+      # Not "did it run once" but "is the file there right now".
+      test: ["CMD-SHELL", "test -s /dynamic/unss-auth.yaml"]
+      interval: "60s"
+      timeout: "5s"
+      retries: 3
+      start_period: "5s"
+
+  unss:
+    image: ghcr.io/dmuix/unss-server:latest
+    container_name: unss
+    # The image already runs as 1000:100. Override only if the host uses
+    # different ids — the mounted metadata.sqlite and savedata/ must belong to
+    # whatever is set here, including the directory, since SQLite writes its
+    # journal next to the database.
+    user: "${PUID:-1000}:${PGID:-100}"
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - ./savedata:/app/savedata
+      # Must already exist as a FILE. If it does not, docker creates a
+      # directory with that name and the server fails to start.
+      - ./metadata.sqlite:/app/metadata.sqlite
+    restart: unless-stopped
+    networks:
+      traefik:
+    labels:
+      traefik.enable: "true"
+      # No port label: the image declares EXPOSE 8989, and Traefik takes the
+      # port from there. Should the image ever expose a second port, Traefik
+      # can no longer choose and needs
+      #   traefik.http.services.unss.loadbalancer.server.port: "8989"
+      # Without either, it builds no router at all and answers 404 — which
+      # reads like a routing problem rather than a missing port.
+      #
+      # `@file`, not `@docker`: the middleware comes from Traefik's dynamic
+      # configuration, written by unss-auth-writer above. Drop the suffix and
+      # Traefik looks for a middleware the docker provider never defined.
+      traefik.http.routers.unss.middlewares: "unss-auth@file"
+    depends_on:
+      # Start only once the middleware file exists — the writer's healthcheck
+      # is what asserts that. It refuses to run on an empty hash, so on a fresh
+      # volume a broken secret lookup keeps the server down rather than
+      # publishing it unauthenticated.
+      #
+      # It cannot do more than that: the file outlives the container, so once a
+      # run has succeeded, a later failed lookup leaves the PREVIOUS middleware
+      # in place. The server then stays reachable behind the old password
+      # instead of the rotated one. `docker logs unss-auth-writer` is the only
+      # thing that tells them apart.
+      unss-auth-writer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request;urllib.request.urlopen('http://localhost:8989/users/healthcheck/saves')\" || exit 1"]
+      interval: "30s"
+      timeout: "5s"
+      retries: 3
+      start_period: "10s"
+
+networks:
+  traefik:
+    external: true

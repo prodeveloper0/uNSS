@@ -17,9 +17,19 @@ build/
 *.nsp
 *.xci
 
+# Switch homebrew (build leftovers)
+*.map
+
 # Server-side data
 savedata/
 metadata.sqlite
+
+# Runtime configuration — may contain the server URL including credentials
+# (the client accepts https://user:pass@host). Never commit these.
+config.ini
+
+# Logs
+*.log
 
 # Claude
 .claude/

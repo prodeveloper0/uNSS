@@ -37,6 +37,7 @@ int HTTPRemoteStore::_issueSaveDataRevisionId(const std::string userName, const 
     });
 
     int ret = client.perform();
+    lastHttpResult = ret;
 
     if (ret < 0)
     {
@@ -87,6 +88,7 @@ int HTTPRemoteStore::_uploadSaveDataRevision(const std::string userName, const u
     });
 
     int ret = client.perform();
+    lastHttpResult = ret;
 
     if (ret < 0)
     {
@@ -119,6 +121,7 @@ int HTTPRemoteStore::_getLatestSaveDataRevision(const std::string userName, cons
     });
 
     int ret = client.perform();
+    lastHttpResult = ret;
 
     if (ret < 0)
     {
@@ -168,6 +171,7 @@ int HTTPRemoteStore::_downloadSaveDataRevision(const std::string userName, const
     });
 
     int ret = client.perform();
+    lastHttpResult = ret;
 
     if (ret < 0)
     {

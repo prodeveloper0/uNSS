@@ -1,5 +1,36 @@
 #include "http.hpp"
+
 #include <string.h>
+#include <sys/stat.h>
+
+
+namespace
+{
+
+bool g_verifyTls = true;
+
+// 있으면 쓰고, 없으면 콘솔에 내장된 목록만 쓴다.
+//
+// 이 curl 은 libnx SSL 백엔드라 CAINFO 를 sslContextImportServerPki 로 넘긴다.
+// 즉 콘솔 목록에 없는 루트도 이 파일 하나로 신뢰시킬 수 있다. 보통은 필요
+// 없다 - Let's Encrypt 는 ISRG Root X1 로 교차서명되고 그것은 10.1.0 부터
+// 콘솔에 들어 있다 (SslCaCertificateId_ISRGRootX10). 사설 CA 를 쓰거나 훗날
+// 체인이 바뀌었을 때를 위한 길이다.
+const char* CA_BUNDLE_PATH = "sdmc:/uNSS/cacert.pem";
+
+bool fileExists(const char* path)
+{
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+} // namespace
+
+
+void HTTPClient::setVerifyTls(bool enabled)
+{
+    g_verifyTls = enabled;
+}
 
 
 HTTPClient::HTTPClient()
@@ -110,8 +141,17 @@ int HTTPClient::perform()
     curl_easy_setopt(curl, CURLOPT_READFUNCTION, readCallback);
     curl_easy_setopt(curl, CURLOPT_READDATA, this);
 
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    // 자격증명은 URL 에 들어 있고 libcurl 이 그것을 Authorization 헤더로
+    // 먼저 보낸다. 검증을 끄면 핸드셰이크에 응답하는 누구에게나 평문 비밀번호를
+    // 건네주는 셈이다 - bcrypt 는 서버에 저장된 해시를 지킬 뿐, 이 구간은
+    // 지키지 못한다. 그래서 기본은 켜짐이다.
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, g_verifyTls ? 1L : 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, g_verifyTls ? 2L : 0L);
+
+    if (g_verifyTls && fileExists(CA_BUNDLE_PATH))
+    {
+        curl_easy_setopt(curl, CURLOPT_CAINFO, CA_BUNDLE_PATH);
+    }
 
     // HTTP 메서드 설정
     if (method == "GET") 

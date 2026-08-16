@@ -9,18 +9,40 @@ endif
 TOPDIR ?= $(CURDIR)
 include $(DEVKITPRO)/libnx/switch_rules
 
-APP_TITLE=micro NX Save Sync
-APP_AUTHOR=prodeveloper0
-APP_VERSION=1.0.0
-APP_TITLEID=uNSS
-
+#---------------------------------------------------------------------------------
+# TARGET is the name of the output
+# BUILD is the directory where object files & intermediate files will be placed
+# SOURCES is a list of directories containing source code
+# DATA is a list of directories containing data files
+# INCLUDES is a list of directories containing header files
+# ROMFS is the directory containing data to be added to RomFS, relative to the Makefile (Optional)
+#
+# NO_ICON: if set to anything, do not use icon.
+# NO_NACP: if set to anything, no .nacp file is generated.
+# APP_TITLE is the name of the app stored in the .nacp file (Optional)
+# APP_AUTHOR is the author of the app stored in the .nacp file (Optional)
+# APP_VERSION is the version of the app stored in the .nacp file (Optional)
+# APP_TITLEID is the titleID of the app stored in the .nacp file (Optional)
+# ICON is the filename of the icon (.jpg), relative to the project folder.
+#   If not set, it attempts to use one of the following (in this order):
+#     - <Project name>.jpg
+#     - icon.jpg
+#     - <libnx folder>/default_icon.jpg
+#
+# CONFIG_JSON is the filename of the NPDM config file (.json), relative to the project folder.
+#   If not set, it attempts to use one of the following (in this order):
+#     - <Project name>.json
+#     - config.json
+#   If a JSON file is provided or autodetected, an ExeFS PFS0 (.nsp) is built instead
+#   of a homebrew executable (.nro). This is intended to be used for sysmodules.
+#   NACP building is skipped as well.
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES		:=	source source/gui
+SOURCES		:=	source
 DATA		:=	data
 INCLUDES	:=	include
-ROMFS	:=	romfs
+#ROMFS	:=	romfs
 
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -30,15 +52,14 @@ ARCH	:=	-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 CFLAGS	:=	-g -Wall -O2 -ffunction-sections \
 			$(ARCH) $(DEFINES)
 
-CFLAGS	+=	$(INCLUDE) -D__SWITCH__ `sdl2-config --cflags` `curl-config --cflags`
+CFLAGS	+=	$(INCLUDE) -D__SWITCH__ `curl-config --cflags`
 
-CXXFLAGS	:= $(CFLAGS) -std=c++20 -fexceptions
+CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:= -lSDL2_ttf -lSDL2 -lfreetype -lharfbuzz -lfreetype -lpng -lbz2 -lz \
-		   -lEGL -lGLESv2 -lglapi -ldrm_nouveau -lnx `curl-config --libs`
+LIBS	:= `curl-config --libs` -lmbedtls -lmbedx509 -lmbedcrypto -lnx
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
@@ -134,48 +155,14 @@ ifneq ($(ROMFS),)
 	export NROFLAGS += --romfsdir=$(CURDIR)/$(ROMFS)
 endif
 
-#---------------------------------------------------------------------------------
-# The app ships the sysmodule inside its romfs and installs it from there. That
-# copy is a build artifact of ../client-sysmodule, not something to edit or
-# commit by hand: leave it stale and the app happily installs a sysmodule that
-# no longer matches this source tree — which is silent, because both files are
-# valid and only their contents differ.
-#---------------------------------------------------------------------------------
-SYSMODULE_NSP := $(CURDIR)/../client-sysmodule/client-sysmodule.nsp
-ROMFS_NSP     := $(CURDIR)/$(ROMFS)/exefs.nsp
-
-.PHONY: $(BUILD) clean all sysmodule
+.PHONY: $(BUILD) clean all
 
 #---------------------------------------------------------------------------------
 all: $(BUILD)
 
-$(BUILD): sysmodule
+$(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
-
-# Build the sysmodule first, then refresh the embedded copy.
-#
-# Copying alone is not enough. The NRO rule depends on the elf and the nacp,
-# never on what is inside romfs/, so a fresh exefs.nsp relinks nothing and the
-# app goes on installing the previous module — exactly the silent staleness this
-# exists to stop. Dropping the NRO is what forces the rebuild (build-all.sh does
-# the same, for the same reason).
-#
-# Missing sources are not an error — a release tarball may ship only the .nsp —
-# but skipping in silence is: the documented docker build mounts only client/
-# (docker-compose.yaml), so ../client-sysmodule is invisible there and the copy
-# would be quietly left at whatever it happened to be.
-sysmodule:
-ifneq ($(wildcard $(CURDIR)/../client-sysmodule/Makefile),)
-	@$(MAKE) --no-print-directory -C $(CURDIR)/../client-sysmodule
-	@mkdir -p $(CURDIR)/$(ROMFS)
-	@cmp -s $(SYSMODULE_NSP) $(ROMFS_NSP) || \
-		(echo "romfs ... exefs.nsp" && cp -f $(SYSMODULE_NSP) $(ROMFS_NSP) \
-			&& rm -f $(CURDIR)/$(TARGET).nro)
-else
-	@[ -f $(ROMFS_NSP) ] || (echo "error: $(ROMFS)/exefs.nsp is missing and ../client-sysmodule is not visible - build the sysmodule first (see build-all.sh)" >&2; exit 1)
-	@echo "warning: ../client-sysmodule not visible - keeping the existing $(ROMFS)/exefs.nsp, which may be stale"
-endif
 
 #---------------------------------------------------------------------------------
 clean:
