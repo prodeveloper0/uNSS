@@ -95,8 +95,12 @@ With `autoPushOnLaunch=1` the client starts pushing as soon as it opens — no
 menu interaction. Two rules keep that from being wasteful or unsafe:
 
 * **Only what changed.** The newest modification time inside each save is
-  compared against the last upload (`sdmc:/uNSS/saves/.syncstate`). Unchanged
-  titles are skipped before they are even archived.
+  compared against the last upload (`sdmc:/uNSS/saves/.syncstate`). The local
+  marker is keyed by the stable `AccountUid` and title ID, so two local users
+  playing the same title do not share a timestamp. Unchanged titles are skipped
+  before they are even archived. Older title-only markers are not trusted as
+  account-specific state, so the first run after this change may back up a
+  title once again for each account.
 * **Not while playing.** A running game keeps its save file open, so a backup
   taken at that moment can be inconsistent. The automatic push waits; the
   manual *Push to Server* button is never blocked.

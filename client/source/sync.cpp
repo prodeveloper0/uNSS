@@ -31,19 +31,25 @@ std::string titleNameOrUnknown(u64 titleID)
 }
 
 
-// 어떤 타이틀이 마지막으로 어떤 상태였는지 적어두는 파일.
-// 한 줄에 "타이틀ID 시각" 형식.
+// 어떤 계정의 어떤 타이틀이 마지막으로 어떤 상태였는지 적어두는 파일.
+// 한 줄에 "uid0uid1:titleID 시각" 형식. 닉네임은 키에 들어가지 않는다.
 std::string syncStatePath(const std::string& saveDataPath)
 {
     return saveDataPath + "/.syncstate";
 }
 
 
-std::string toHexId(u64 titleID)
+std::string toHexId(u64 value)
 {
     char buffer[17];
-    snprintf(buffer, sizeof(buffer), "%016lX", titleID);
+    snprintf(buffer, sizeof(buffer), "%016llX", static_cast<unsigned long long>(value));
     return std::string(buffer);
+}
+
+
+std::string syncStateKey(const AccountUid uid, u64 titleID)
+{
+    return toHexId(uid.uid[0]) + toHexId(uid.uid[1]) + ":" + toHexId(titleID);
 }
 
 
@@ -74,17 +80,17 @@ u64 latestSaveDataTimestamp(const AccountUid uid, u64 titleID)
 }
 
 
-u64 readSyncedTimestamp(const std::string& saveDataPath, u64 titleID)
+u64 readSyncedTimestamp(const std::string& saveDataPath, const AccountUid uid, u64 titleID)
 {
     FILE* fp = fopen(syncStatePath(saveDataPath).c_str(), "r");
     if (!fp) return 0;
 
-    const std::string wanted = toHexId(titleID);
-    char idBuffer[32];
+    const std::string wanted = syncStateKey(uid, titleID);
+    char idBuffer[64];
     unsigned long long stamp = 0;
     u64 found = 0;
 
-    while (fscanf(fp, "%31s %llu", idBuffer, &stamp) == 2)
+    while (fscanf(fp, "%63s %llu", idBuffer, &stamp) == 2)
     {
         if (wanted == idBuffer)
         {
@@ -98,19 +104,20 @@ u64 readSyncedTimestamp(const std::string& saveDataPath, u64 titleID)
 }
 
 
-void writeSyncedTimestamp(const std::string& saveDataPath, u64 titleID, u64 stamp)
+void writeSyncedTimestamp(const std::string& saveDataPath, const AccountUid uid, u64 titleID, u64 stamp)
 {
     const std::string path = syncStatePath(saveDataPath);
-    const std::string wanted = toHexId(titleID);
+    const std::string wanted = syncStateKey(uid, titleID);
 
     // 통째로 읽어서 해당 줄만 갈아끼운다. 항목이 수십 개라 이 정도면 충분하다.
+    // 예전의 title-only 줄은 보존하되, 새 계정별 키로는 절대 조회하지 않는다.
     std::string rebuilt;
     FILE* fp = fopen(path.c_str(), "r");
     if (fp)
     {
-        char idBuffer[32];
+        char idBuffer[64];
         unsigned long long existing = 0;
-        while (fscanf(fp, "%31s %llu", idBuffer, &existing) == 2)
+        while (fscanf(fp, "%63s %llu", idBuffer, &existing) == 2)
         {
             if (wanted == idBuffer) continue;
             rebuilt += std::string(idBuffer) + " " + std::to_string(existing) + "\n";
@@ -150,7 +157,7 @@ bool hasSaveDataChanged(const SyncOptions& options, u64 titleID)
     // 시각을 못 읽었으면 판단할 근거가 없다. 안전한 쪽으로 (업로드).
     if (current == 0) return true;
 
-    return current != readSyncedTimestamp(options.saveDataPath, titleID);
+    return current != readSyncedTimestamp(options.saveDataPath, options.uid, titleID);
 }
 
 
@@ -159,7 +166,7 @@ void markSaveDataSynced(const SyncOptions& options, u64 titleID)
     const u64 current = latestSaveDataTimestamp(options.uid, titleID);
     if (current == 0) return;
 
-    writeSyncedTimestamp(options.saveDataPath, titleID, current);
+    writeSyncedTimestamp(options.saveDataPath, options.uid, titleID, current);
 }
 
 
