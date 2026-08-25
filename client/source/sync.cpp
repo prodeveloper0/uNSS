@@ -4,8 +4,6 @@
 #include <ctime>
 #include <vector>
 
-#include <sys/stat.h>
-
 #include "fileio.hpp"
 #include "remote.hpp"
 #include "savedata.hpp"
@@ -16,9 +14,29 @@
 namespace
 {
 
+struct SaveRevision
+{
+    bool valid = false;
+    u64 saveDataId = 0;
+    u64 commitId = 0;
+};
+
+struct PendingRevision
+{
+    u64 titleID = 0;
+    SaveRevision revision;
+};
+
+
 std::string lastSyncPath(const std::string& saveDataPath)
 {
     return saveDataPath + "/.lastautosync";
+}
+
+
+std::string syncStatePath(const std::string& saveDataPath)
+{
+    return saveDataPath + "/.syncstate-v2";
 }
 
 
@@ -31,66 +49,123 @@ std::string titleNameOrUnknown(u64 titleID)
 }
 
 
-// 어떤 타이틀이 마지막으로 어떤 상태였는지 적어두는 파일.
-// 한 줄에 "타이틀ID 시각" 형식.
-std::string syncStatePath(const std::string& saveDataPath)
+bool sameAccount(const AccountUid& left, const AccountUid& right)
 {
-    return saveDataPath + "/.syncstate";
+    return left.uid[0] == right.uid[0] && left.uid[1] == right.uid[1];
 }
 
 
-std::string toHexId(u64 titleID)
+bool sameRevision(const SaveRevision& left, const SaveRevision& right)
 {
-    char buffer[17];
-    snprintf(buffer, sizeof(buffer), "%016lX", titleID);
+    return left.valid && right.valid
+        && left.saveDataId == right.saveDataId
+        && left.commitId == right.commitId;
+}
+
+
+std::string revisionKey(const AccountUid& uid, u64 titleID)
+{
+    char buffer[50];
+    snprintf(
+        buffer,
+        sizeof(buffer),
+        "%016llX%016llX:%016llX",
+        (unsigned long long)uid.uid[0],
+        (unsigned long long)uid.uid[1],
+        (unsigned long long)titleID
+    );
     return std::string(buffer);
 }
 
 
-// 세이브 안에서 가장 최근 수정 시각을 찾는다.
-// 마운트에 실패하면 0 을 돌려주고, 그 경우 호출한 쪽은 "바뀌었다" 로 본다.
-u64 latestSaveDataTimestamp(const AccountUid uid, u64 titleID)
+SaveRevision readSaveRevision(const AccountUid& uid, u64 titleID)
 {
-    const std::string mountPoint = "unsschk";
+    SaveRevision revision;
 
-    if (mountSaveData(mountPoint, uid, titleID) != 0)
-        return 0;
+    FsSaveDataInfoReader reader;
+    Result rc = fsOpenSaveDataInfoReader(&reader, FsSaveDataSpaceId_User);
+    if (R_FAILED(rc))
+        return revision;
 
-    u64 latest = 0;
-    walk(mountPoint + ":/", [&latest](const std::string& path, bool isDir)
+    FsSaveDataInfo match{};
+    int matches = 0;
+
+    while (true)
     {
-        if (isDir) return;
+        FsSaveDataInfo info{};
+        s64 count = 0;
+        rc = fsSaveDataInfoReaderRead(&reader, &info, 1, &count);
+        if (R_FAILED(rc) || count == 0)
+            break;
 
-        struct stat st;
-        if (stat(path.c_str(), &st) == 0)
+        if (info.save_data_type == FsSaveDataType_Account
+            && info.application_id == titleID
+            && sameAccount(info.uid, uid))
         {
-            const u64 mtime = (u64)st.st_mtime;
-            if (mtime > latest) latest = mtime;
+            match = info;
+            ++matches;
         }
-    });
+    }
 
-    unmount(mountPoint);
-    return latest;
+    fsSaveDataInfoReaderClose(&reader);
+
+    // A missing or ambiguous match is not a safe basis for skipping a backup.
+    if (R_FAILED(rc) || matches != 1)
+        return revision;
+
+    FsSaveDataExtraData extra{};
+    rc = fsReadSaveDataFileSystemExtraDataBySaveDataSpaceId(
+        &extra,
+        sizeof(extra),
+        (FsSaveDataSpaceId)match.save_data_space_id,
+        match.save_data_id
+    );
+    if (R_FAILED(rc))
+        return revision;
+
+    revision.valid = true;
+    revision.saveDataId = match.save_data_id;
+    revision.commitId = extra.commit_id;
+    return revision;
 }
 
 
-u64 readSyncedTimestamp(const std::string& saveDataPath, u64 titleID)
+bool readSyncedRevision(
+    const std::string& saveDataPath,
+    const AccountUid& uid,
+    u64 titleID,
+    SaveRevision& revision)
 {
     FILE* fp = fopen(syncStatePath(saveDataPath).c_str(), "r");
-    if (!fp) return 0;
+    if (!fp) return false;
 
-    const std::string wanted = toHexId(titleID);
-    char idBuffer[32];
-    unsigned long long stamp = 0;
-    u64 found = 0;
+    const std::string wanted = revisionKey(uid, titleID);
+    bool found = false;
+    char line[256];
 
-    while (fscanf(fp, "%31s %llu", idBuffer, &stamp) == 2)
+    while (fgets(line, sizeof(line), fp))
     {
-        if (wanted == idBuffer)
+        char key[64];
+        unsigned long long saveDataId = 0;
+        unsigned long long commitId = 0;
+
+        if (sscanf(line, "%63s %llx %llx", key, &saveDataId, &commitId) != 3)
+            continue;
+
+        if (wanted != key)
+            continue;
+
+        // Duplicate records are ambiguous. Fail open rather than choosing one.
+        if (found)
         {
-            found = (u64)stamp;
-            break;
+            fclose(fp);
+            return false;
         }
+
+        revision.valid = true;
+        revision.saveDataId = (u64)saveDataId;
+        revision.commitId = (u64)commitId;
+        found = true;
     }
 
     fclose(fp);
@@ -98,32 +173,106 @@ u64 readSyncedTimestamp(const std::string& saveDataPath, u64 titleID)
 }
 
 
-void writeSyncedTimestamp(const std::string& saveDataPath, u64 titleID, u64 stamp)
+bool writeSyncedRevision(
+    const std::string& saveDataPath,
+    const AccountUid& uid,
+    u64 titleID,
+    const SaveRevision& revision)
 {
-    const std::string path = syncStatePath(saveDataPath);
-    const std::string wanted = toHexId(titleID);
+    if (!revision.valid)
+        return false;
 
-    // 통째로 읽어서 해당 줄만 갈아끼운다. 항목이 수십 개라 이 정도면 충분하다.
+    const std::string path = syncStatePath(saveDataPath);
+    const std::string wanted = revisionKey(uid, titleID);
     std::string rebuilt;
+
     FILE* fp = fopen(path.c_str(), "r");
     if (fp)
     {
-        char idBuffer[32];
-        unsigned long long existing = 0;
-        while (fscanf(fp, "%31s %llu", idBuffer, &existing) == 2)
+        char line[256];
+        while (fgets(line, sizeof(line), fp))
         {
-            if (wanted == idBuffer) continue;
-            rebuilt += std::string(idBuffer) + " " + std::to_string(existing) + "\n";
+            char key[64];
+            unsigned long long saveDataId = 0;
+            unsigned long long commitId = 0;
+
+            const bool parsed = sscanf(line, "%63s %llx %llx", key, &saveDataId, &commitId) == 3;
+            if (parsed && wanted == key)
+                continue;
+
+            rebuilt += line;
         }
         fclose(fp);
     }
 
-    rebuilt += wanted + " " + std::to_string(stamp) + "\n";
+    char record[128];
+    const int recordLength = snprintf(
+        record,
+        sizeof(record),
+        "%s %016llX %016llX\n",
+        wanted.c_str(),
+        (unsigned long long)revision.saveDataId,
+        (unsigned long long)revision.commitId
+    );
+    if (recordLength <= 0 || (size_t)recordLength >= sizeof(record))
+        return false;
+
+    rebuilt.append(record, (size_t)recordLength);
 
     FILE* out = fopen(path.c_str(), "w");
-    if (!out) return;
-    fwrite(rebuilt.data(), 1, rebuilt.size(), out);
-    fclose(out);
+    if (!out) return false;
+
+    const bool ok = fwrite(rebuilt.data(), 1, rebuilt.size(), out) == rebuilt.size();
+    if (fclose(out) != 0)
+        return false;
+
+    return ok;
+}
+
+
+bool saveRevisionChanged(
+    const SyncOptions& options,
+    u64 titleID,
+    SaveRevision* currentOut = nullptr)
+{
+    const SaveRevision current = readSaveRevision(options.uid, titleID);
+    if (currentOut) *currentOut = current;
+
+    // Unknown metadata must never suppress a backup.
+    if (!current.valid)
+        return true;
+
+    SaveRevision synced;
+    if (!readSyncedRevision(options.saveDataPath, options.uid, titleID, synced))
+        return true;
+
+    return !sameRevision(current, synced);
+}
+
+
+const SaveRevision* findPendingRevision(
+    const std::vector<PendingRevision>& pending,
+    u64 titleID)
+{
+    for (const PendingRevision& entry : pending)
+    {
+        if (entry.titleID == titleID)
+            return &entry.revision;
+    }
+    return nullptr;
+}
+
+
+// Target title enumeration shared by pushAllSaves and countChangedTitles.
+int collectTargetTitles(const SyncOptions& options, AccountUid uid, std::vector<u64>& titleIDs)
+{
+    const int ret = options.archiveBy == "all"
+        ? probeAllTitles(uid, titleIDs)
+        : probeSaveDataCreatedTitles(uid, titleIDs);
+    if (ret != 0) return ret;
+
+    filterExcludedTitles(titleIDs, options.excludedTitleIds, options.excludedTitleNames);
+    return 0;
 }
 
 } // namespace
@@ -138,48 +287,14 @@ bool isGameRunning()
     const Result rc = pmdmntGetApplicationProcessId(&pid);
     pmdmntExit();
 
-    // 실행 중인 애플리케이션이 없으면 실패를 돌려준다.
     return R_SUCCEEDED(rc) && pid != 0;
 }
 
 
 bool hasSaveDataChanged(const SyncOptions& options, u64 titleID)
 {
-    const u64 current = latestSaveDataTimestamp(options.uid, titleID);
-
-    // 시각을 못 읽었으면 판단할 근거가 없다. 안전한 쪽으로 (업로드).
-    if (current == 0) return true;
-
-    return current != readSyncedTimestamp(options.saveDataPath, titleID);
+    return saveRevisionChanged(options, titleID);
 }
-
-
-void markSaveDataSynced(const SyncOptions& options, u64 titleID)
-{
-    const u64 current = latestSaveDataTimestamp(options.uid, titleID);
-    if (current == 0) return;
-
-    writeSyncedTimestamp(options.saveDataPath, titleID, current);
-}
-
-
-namespace
-{
-
-// 백업 대상 타이틀 목록. pushAllSaves 와 countChangedTitles 가 같은 기준을
-// 써야 "바뀐 게 없다" 와 "올릴 게 없다" 가 어긋나지 않는다.
-int collectTargetTitles(const SyncOptions& options, AccountUid uid, std::vector<u64>& titleIDs)
-{
-    const int ret = options.archiveBy == "all"
-        ? probeAllTitles(uid, titleIDs)
-        : probeSaveDataCreatedTitles(uid, titleIDs);
-    if (ret != 0) return ret;
-
-    filterExcludedTitles(titleIDs, options.excludedTitleIds, options.excludedTitleNames);
-    return 0;
-}
-
-} // namespace
 
 
 int countChangedTitles(const SyncOptions& options)
@@ -205,21 +320,31 @@ int pushAllSaves(const SyncOptions& options, SyncLogFunc log)
     HTTPRemoteStore remoteStore(options.serverUrl, options.saveDataPath);
     recursiveMkdir(options.saveDataPath.c_str());
 
+    // Capture the exact revision that caused each title to be selected. This is
+    // also the revision the archive is expected to represent. After upload we
+    // only advance state if Horizon still reports the same revision.
+    std::vector<PendingRevision> pendingRevisions;
+
     const ProbeTitlesFunc probeFunc = [&](const AccountUid probeUid, std::vector<u64>& titleIDs) -> int
     {
         const int ret = collectTargetTitles(options, probeUid, titleIDs);
         if (ret != 0) return ret;
 
-        // 안 바뀐 타이틀은 압축조차 하지 않는다. 여기서 걸러야 의미가 있다.
         if (options.skipUnchanged)
         {
             std::vector<u64> changed;
             changed.reserve(titleIDs.size());
+            pendingRevisions.clear();
+            pendingRevisions.reserve(titleIDs.size());
 
             for (const u64 titleID : titleIDs)
             {
-                if (hasSaveDataChanged(options, titleID))
+                SaveRevision current;
+                if (saveRevisionChanged(options, titleID, &current))
+                {
                     changed.push_back(titleID);
+                    pendingRevisions.push_back({titleID, current});
+                }
             }
 
             const size_t skipped = titleIDs.size() - changed.size();
@@ -232,10 +357,6 @@ int pushAllSaves(const SyncOptions& options, SyncLogFunc log)
         return 0;
     };
 
-    // 개별 타이틀의 실패는 콜백 안에서만 보인다. archiveAllSaveData 는 목록을
-    // 훑는 데 성공하면 OK 를 주기 때문에, 세어두지 않으면 서버가 아예 죽어
-    // 있어도 이 함수는 0 을 돌려준다. 그러면 호출하는 쪽이 백업을 마쳤다고
-    // 믿고 마지막 시각을 남기고, 24 시간 동안 다시 시도하지 않는다.
     int failures = 0;
 
     const int ret = archiveAllSaveData(
@@ -251,9 +372,6 @@ int pushAllSaves(const SyncOptions& options, SyncLogFunc log)
         {
             if (ret == SAVEDATA_NO_SAVE_DATA)
             {
-                // 이 계정은 그 게임을 저장한 적이 없다. 실패가 아니므로 세지
-                // 않는다 - 세면 한 바퀴가 늘 "오류로 끝남" 이 되고, 그러면
-                // 마지막 성공 시각이 남지 않아 다음 바퀴가 전부를 다시 한다.
                 log("No save data for this account - skipped");
             }
             else if (ret != SAVEDATA_OK)
@@ -266,18 +384,35 @@ int pushAllSaves(const SyncOptions& options, SyncLogFunc log)
                 int pushRet = remoteStore.push(options.nickname, titleID);
                 if (pushRet != 0)
                 {
-                    // ret 은 늘 -1 이라 아무것도 말해주지 않는다. 뒤의 값이
-                    // 진짜 원인이다: 음수면 연결 자체가 안 된 것
-                    // (HTTPCLIENT_ERROR_*, 예: -5 = TLS), 양수면 서버가
-                    // 돌려준 상태 코드다.
                     log("Failed to push, ret=" + std::to_string(pushRet)
                         + " http=" + std::to_string(remoteStore.getLastHttpResult()));
                     ++failures;
                 }
                 else if (options.skipUnchanged)
                 {
-                    // 성공한 것만 기록한다. 실패한 타이틀은 다음에 다시 올라간다.
-                    markSaveDataSynced(options, titleID);
+                    const SaveRevision* pre = findPendingRevision(pendingRevisions, titleID);
+                    const SaveRevision post = readSaveRevision(options.uid, titleID);
+
+                    if (!pre || !pre->valid || !post.valid)
+                    {
+                        // The backup itself succeeded, but there is no reliable
+                        // token to suppress a future retry. Leave state unchanged.
+                        log("Save revision unavailable - sync state not advanced");
+                    }
+                    else if (!sameRevision(*pre, post))
+                    {
+                        // A newer commit appeared while this backup was being
+                        // archived/uploaded. Do not mark it as already backed up,
+                        // and make the round fail so the sysmodule retries soon.
+                        log("Save changed during upload - will retry");
+                        ++failures;
+                    }
+                    else if (!writeSyncedRevision(options.saveDataPath, options.uid, titleID, *pre))
+                    {
+                        // State is only an optimisation. A write failure remains
+                        // fail-open and therefore causes another backup later.
+                        log("Failed to record sync state - title will be backed up again");
+                    }
                 }
             }
             return true;
@@ -285,10 +420,6 @@ int pushAllSaves(const SyncOptions& options, SyncLogFunc log)
     );
 
     if (ret != 0) return ret;
-
-    // 실패한 타이틀 수를 음수로 돌려준다. SAVEDATA_* 코드는 양수라 서로
-    // 헷갈리지 않는다. 0 은 "하나도 빠짐없이 올라갔다" 는 뜻이고,
-    // 마지막 백업 시각은 그때만 남겨야 한다.
     return failures > 0 ? -failures : 0;
 }
 
@@ -380,7 +511,6 @@ bool isAutoSyncDue(const std::string& saveDataPath, int intervalHours)
     if (last == 0) return true;
 
     const time_t now = time(NULL);
-    // 시스템 시계가 뒤로 간 경우 (RTC 재설정 등) 그냥 실행한다.
     if (now < last) return true;
 
     return (now - last) >= (time_t)intervalHours * 3600;
