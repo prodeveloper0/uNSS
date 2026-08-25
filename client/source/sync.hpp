@@ -6,6 +6,7 @@
 #include <switch.h>
 
 
+// 동기화 진행 상황을 알리는 콜백. GUI 든 콘솔이든 동일하게 사용한다.
 using SyncLogFunc = std::function<void(const std::string&)>;
 
 
@@ -17,33 +18,44 @@ struct SyncOptions
     std::string serverUrl;
     bool remoteEnabled = false;
 
+    // "created" 또는 "all"
     std::string archiveBy = "created";
     std::string restoreBy = "all";
 
     std::string excludedTitleIds;
     std::string excludedTitleNames;
 
-    // Skip titles whose Horizon SaveDataId + CommitId matches the last
-    // successfully uploaded revision for this account and title.
+    // 마지막 업로드와 SaveDataId + CommitId 가 같은 타이틀은 건너뛴다.
     bool skipUnchanged = true;
 };
 
 
+// 게임이 실행 중인가. 실행 중이면 세이브가 열려 있을 수 있어
+// 그 상태의 백업은 일관성을 보장하지 못한다.
 bool isGameRunning();
 
-// Unknown metadata or missing state always returns true (fail-open).
+// 세이브가 마지막 동기화 이후 바뀌었는지. SaveDataId + CommitId 로 판단한다.
+// 메타데이터나 기록이 없거나 애매하면 안전한 쪽으로 항상 true.
 bool hasSaveDataChanged(const SyncOptions& options, u64 titleID);
 
-// Number of titles whose SaveData revision differs from .syncstate-v2.
-// Returns -1 when title enumeration fails.
+// 올릴 것이 있는 타이틀 수. 네트워크를 열기 전에 SaveData 메타데이터만
+// 읽어서 판단한다. 목록을 못 읽으면 -1.
+//
+// 0 이면 정말로 할 일이 없다는 뜻이고, 그러면 소켓도 무선랜도 건드릴
+// 이유가 없다. 시스템 모듈에서는 그 차이가 크다.
 int countChangedTitles(const SyncOptions& options);
 
 
+// 모든 세이브를 아카이브한 뒤 서버로 업로드한다.
 int pushAllSaves(const SyncOptions& options, SyncLogFunc log);
+
+// 서버에서 내려받아 복원한다. remoteEnabled 가 false 면 로컬 아카이브에서 복원한다.
 int pullAllSaves(const SyncOptions& options, SyncLogFunc log);
 
 
+// 마지막 자동 동기화 시각 (Unix time) 을 기록하는 파일. 없으면 0 을 반환한다.
 time_t readLastAutoSyncTime(const std::string& saveDataPath);
 void writeLastAutoSyncTime(const std::string& saveDataPath, time_t when);
 
+// intervalHours 가 지났는지 확인한다. intervalHours <= 0 이면 항상 true.
 bool isAutoSyncDue(const std::string& saveDataPath, int intervalHours);
