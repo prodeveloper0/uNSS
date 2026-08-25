@@ -25,7 +25,7 @@ struct SyncOptions
     std::string excludedTitleIds;
     std::string excludedTitleNames;
 
-    // 마지막 업로드 이후 바뀌지 않은 타이틀은 건너뛴다.
+    // 마지막 업로드와 SaveDataId + CommitId 가 같은 타이틀은 건너뛴다.
     bool skipUnchanged = true;
 };
 
@@ -34,19 +34,16 @@ struct SyncOptions
 // 그 상태의 백업은 일관성을 보장하지 못한다.
 bool isGameRunning();
 
-// 세이브가 마지막 동기화 이후 바뀌었는지. 판단 근거는 세이브 안의
-// 가장 최근 수정 시각이다. 기록이 없으면 항상 true.
+// 세이브가 마지막 동기화 이후 바뀌었는지. SaveDataId + CommitId 로 판단한다.
+// 메타데이터나 기록이 없거나 애매하면 안전한 쪽으로 항상 true.
 bool hasSaveDataChanged(const SyncOptions& options, u64 titleID);
 
-// 올릴 것이 있는 타이틀 수. 네트워크를 열기 전에 물어볼 수 있다 -
-// 파일 시각만 보기 때문이다. 목록을 못 읽으면 -1.
+// 올릴 것이 있는 타이틀 수. 네트워크를 열기 전에 SaveData 메타데이터만
+// 읽어서 판단한다. 목록을 못 읽으면 -1.
 //
 // 0 이면 정말로 할 일이 없다는 뜻이고, 그러면 소켓도 무선랜도 건드릴
 // 이유가 없다. 시스템 모듈에서는 그 차이가 크다.
 int countChangedTitles(const SyncOptions& options);
-
-// 업로드에 성공한 뒤 현재 상태를 기록해 둔다.
-void markSaveDataSynced(const SyncOptions& options, u64 titleID);
 
 
 // 모든 세이브를 아카이브한 뒤 서버로 업로드한다.
