@@ -2,12 +2,15 @@
 #include "ProgressScreen.hpp"
 #include "AccountScreen.hpp"
 #include "LogScreen.hpp"
+#include "ConfirmScreen.hpp"
+#include "NativeRestoreScreen.hpp"
 
 #include "../title.hpp"
 #include "../savedata.hpp"
 #include "../remote.hpp"
 #include "../utils.hpp"
 #include "../fileio.hpp"
+#include "../nativerestore.hpp"
 
 
 namespace gui
@@ -87,7 +90,8 @@ void MainScreen::rebuildMenu()
         bool remoteEnabled = (bool)config["remote"]["enabled"];
 
         menuItems.push_back({"Push to Server", [this]() { startPush(); }, remoteEnabled});
-        menuItems.push_back({"Pull from Server", [this]() { startPull(); }, true});
+        menuItems.push_back({"Verify Server Backups", [this]() { startVerifyBackups(); }, remoteEnabled});
+        menuItems.push_back({"Restore Native Saves", [this]() { startPull(); }, remoteEnabled});
 
         // 첫 설치만 사용자가 직접 고르게 한다. 부팅 때 도는 프로세스가
         // 생기는 일이라 몰래 해서는 안 된다.
@@ -294,7 +298,8 @@ void MainScreen::render(Renderer& r)
     for (int i = 0; i < (int)menuItems.size(); i++)
     {
         int btnW = r.screenWidth() - x * 2;
-        int btnH = 50;
+        int btnH = menuItems.size() > 6 ? 44 : 50;
+        int btnGap = menuItems.size() > 6 ? 6 : 10;
 
         Color bgColor = (i == selectedIndex) ? COLOR_HIGHLIGHT : COLOR_BUTTON;
         Color textColor = menuItems[i].enabled ? COLOR_TEXT : COLOR_DIM;
@@ -307,7 +312,7 @@ void MainScreen::render(Renderer& r)
         r.drawRect(x, y, btnW, btnH, bgColor);
         r.drawText(menuItems[i].label, x + 20, y + 12, 24, textColor);
 
-        y += btnH + 10;
+        y += btnH + btnGap;
     }
 
     if (!statusMessage.empty())
@@ -385,16 +390,28 @@ void MainScreen::startAutoPushIfDue()
 }
 
 
-void MainScreen::startPull()
+void MainScreen::startVerifyBackups()
 {
     const SyncOptions options = buildSyncOptions();
-
     auto work = [=](std::function<void(const std::string&)> log) -> int
     {
-        return pullAllSaves(options, log);
+        return nativerestore::verifyLatest(options, log);
     };
+    App::instance().pushScreen(
+        new ProgressScreen("Verify Server Backups", std::move(work)));
+}
 
-    App::instance().pushScreen(new ProgressScreen("Pull from Server", std::move(work)));
+
+void MainScreen::startPull()
+{
+    if (isGameRunning())
+    {
+        statusMessage = "Close the running game before restoring native saves.";
+        return;
+    }
+
+    App::instance().pushScreen(
+        new NativeRestoreScreen(buildSyncOptions()));
 }
 
 } // namespace gui

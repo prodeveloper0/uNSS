@@ -34,6 +34,7 @@ private:
     void onAccountSelected(const Account& selected);
     void startPush();
     void startPull();
+    void startVerifyBackups();
     void switchAccount();
     void rebuildMenu();
 
