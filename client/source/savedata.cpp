@@ -36,14 +36,16 @@ int archiveSaveData(AccountUid uid, const u64 titleID, const std::string& output
     }
 
     const std::string stringfyTitleID = toHex(titleID);
+    const std::string archivePath = outputPath + "/" + stringfyTitleID + ".sar";
 
     ZipWriter zipWriter;
-    if (!zipWriter.open(outputPath + "/" + stringfyTitleID + ".sar"))
+    if (!zipWriter.open(archivePath))
     {
         return SAVEDATA_FAILED_TO_OPEN_ARCHIVE;
     }
 
     bool success = true;
+    size_t archivedSaveFiles = 0;
 
     walk("save:/", [&](const std::string& path, bool isDir)
     {
@@ -54,6 +56,7 @@ int archiveSaveData(AccountUid uid, const u64 titleID, const std::string& output
 
         const std::string relativePath = path.substr(strlen("save:/"));
         success = zipWriter.add(path, "saves/" + relativePath);
+        if (success) ++archivedSaveFiles;
     });
 
     if (!success)
@@ -79,6 +82,15 @@ int archiveSaveData(AccountUid uid, const u64 titleID, const std::string& output
     if (!success)
     {
         return SAVEDATA_FAILED_TO_ADD_FILE;
+    }
+
+    // A newly created save container can be mounted before a game has written
+    // any files. Do not publish the resulting valid-but-empty 22-byte ZIP as
+    // the latest backup.
+    if (archivedSaveFiles == 0)
+    {
+        remove(archivePath.c_str());
+        return SAVEDATA_NO_SAVE_DATA;
     }
 
     return 0;
