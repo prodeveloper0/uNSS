@@ -12,13 +12,21 @@
 #include <fcntl.h>
 
 
-int walk(const std::string& path, std::function<void(const std::string&, bool isDir)> callback)
+int walk(const std::string& path, const std::function<void(const std::string&, bool isDir)>& callback, int maxDepth)
 {
+    if (maxDepth <= 0)
+    {
+        return -2;
+    }
+
     DIR* dir = opendir(path.c_str());
     if (dir == NULL)
     {
         return -1;
     }
+
+    // Propagate a depth failure; a partial traversal must not look complete.
+    int ret = 0;
 
     dirent* entry;
     while ((entry = readdir(dir)) != NULL)
@@ -32,7 +40,7 @@ int walk(const std::string& path, std::function<void(const std::string&, bool is
 
         if (entry->d_type == DT_DIR)
         {
-            walk(fullPath, callback);
+            if (walk(fullPath, callback, maxDepth - 1) == -2) ret = -2;
             callback(fullPath, true);
         }
         else
@@ -42,7 +50,7 @@ int walk(const std::string& path, std::function<void(const std::string&, bool is
     }
 
     closedir(dir);
-    return 0;
+    return ret;
 }
 
 

@@ -26,9 +26,11 @@
 
 #include "account.hpp"
 #include "fileio.hpp"
+#include "gen1recomp.hpp"
 #include "http.hpp"
 #include "ini.hpp"
 #include "sync.hpp"
+#include "utils.hpp"
 
 
 // 절대 함부로 올리지 말 것.
@@ -822,7 +824,48 @@ bool ensureNetwork()
 }
 
 
-// 한 바퀴. 올릴 것이 없으면 네트워크도 건드리지 않고 조용히 돌아간다.
+// This is part of the same sysmodule round, but deliberately has no access to
+// the native title/sync pipeline. A Gen1 failure cannot alter native results,
+// state or scheduling.
+void runGen1Backup(Config& config, const std::vector<Account>& targets)
+{
+    const std::string setting = config["homebrew"]["gen1recomp"].value;
+    if (!setting.empty() && !(bool)config["homebrew"]["gen1recomp"]) return;
+    if (!gen1recomp::present()) return;
+
+    const std::string wanted = config["account"]["defaultAccountName"].value;
+    const Account* account = nullptr;
+    for (const Account& target : targets)
+        if (wanted == target.nickname) { account = &target; break; }
+    if (!account)
+    {
+        writeLog("Gen1Recomp: default account is not in this round");
+        return;
+    }
+
+    const SyncOptions normal = makeOptions(config, *account);
+    gen1recomp::Options options;
+    options.stagePath = normal.saveDataPath + "/"
+        + toHex(normal.uid.uid[0]) + toHex(normal.uid.uid[1]);
+    options.accountName = normal.nickname;
+    options.serverUrl = normal.serverUrl;
+    options.remoteEnabled = normal.remoteEnabled;
+    // Unlike native saves, an SD homebrew has no Horizon ownership lock.
+    // Any application appearing while reading it aborts the archive.
+    options.sourceBusy = [] { return isGameRunning(); };
+    options.ensureNetwork = [] { return ensureNetwork(); };
+
+    const int ret = gen1recomp::runRound(options, [](const std::string& line)
+    {
+        writeLog("  " + line);
+    });
+    if (ret != gen1recomp::OK && ret != gen1recomp::ABSENT)
+        writeLog("  Gen1Recomp: will retry next round");
+}
+
+
+// 한 바퀴. 올릴 것이 없으면 네트워크는 건드리지 않지만, 시작과 끝은 반드시
+// 남긴다 - 아래 훑는 동안은 몇 분씩 아무 줄도 나오지 않기 때문이다.
 void runBackupRound(Config& config, const std::vector<Account>& targets)
 {
     int pending = 0;
@@ -833,6 +876,12 @@ void runBackupRound(Config& config, const std::vector<Account>& targets)
     }
 
     if (pending == 0) return;
+
+    if (pending == 0)
+    {
+        runGen1Backup(config, targets);
+        return;
+    }
 
     writeLog("titles to upload: " + std::to_string(pending));
 
@@ -872,6 +921,10 @@ void runBackupRound(Config& config, const std::vector<Account>& targets)
         writeLog("backup finished with errors - will retry");
         logHeapUsage("after round");
     }
+
+    // Same round, after native saves. Its failure is intentionally isolated:
+    // normal uNSS state and its next schedule have already been decided.
+    runGen1Backup(config, targets);
 }
 
 } // namespace

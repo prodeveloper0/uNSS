@@ -7,7 +7,10 @@
 #include <switch.h>
 
 
-int walk(const std::string& path, std::function<void(const std::string&, bool isDir)> callback);
+// Recursively visit files, then directories. Keep one callback instance to
+// avoid growing the small sysmodule stack with std::function copies. Return
+// -2 when maxDepth is exceeded so callers never publish a partial traversal.
+int walk(const std::string& path, const std::function<void(const std::string&, bool isDir)>& callback, int maxDepth = 64);
 
 int recursiveMkdir(const std::string& path, mode_t mode = 0777);
 

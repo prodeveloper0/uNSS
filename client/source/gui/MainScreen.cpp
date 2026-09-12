@@ -2,12 +2,15 @@
 #include "ProgressScreen.hpp"
 #include "AccountScreen.hpp"
 #include "LogScreen.hpp"
+#include "ConfirmScreen.hpp"
 
 #include "../title.hpp"
 #include "../savedata.hpp"
 #include "../remote.hpp"
 #include "../utils.hpp"
 #include "../fileio.hpp"
+#include "../gen1restore.hpp"
+#include "../gen1recomp.hpp"
 
 
 namespace gui
@@ -88,6 +91,11 @@ void MainScreen::rebuildMenu()
 
         menuItems.push_back({"Push to Server", [this]() { startPush(); }, remoteEnabled});
         menuItems.push_back({"Pull from Server", [this]() { startPull(); }, true});
+
+        const std::string gen1Setting = config["homebrew"]["gen1recomp"].value;
+        const bool gen1Enabled = gen1Setting.empty() || (bool)config["homebrew"]["gen1recomp"];
+        if (gen1Enabled && gen1recomp::present())
+            menuItems.push_back({"Restore Gen1Recomp", [this]() { startGen1Restore(); }, remoteEnabled});
 
         // 첫 설치만 사용자가 직접 고르게 한다. 부팅 때 도는 프로세스가
         // 생기는 일이라 몰래 해서는 안 된다.
@@ -287,6 +295,9 @@ void MainScreen::render(Renderer& r)
     {
         r.drawText(std::string("Server: ") + (std::string)config["remote"]["serverUrl"], x, y, 18, COLOR_DIM);
         y += 28;
+        r.drawText("Version: v" + std::to_string(sysmodule::BUNDLED_VERSION)
+           , x, y, 18, COLOR_DIM);
+        y += 28;
     }
 
     y += 30;
@@ -395,6 +406,42 @@ void MainScreen::startPull()
     };
 
     App::instance().pushScreen(new ProgressScreen("Pull from Server", std::move(work)));
+}
+
+
+void MainScreen::startGen1Restore()
+{
+    if (isGameRunning())
+    {
+        statusMessage = "Close the running game before restoring Gen1Recomp.";
+        return;
+    }
+
+    const SyncOptions normal = buildSyncOptions();
+    const std::string accountStage = normal.saveDataPath + "/"
+        + toHex(normal.uid.uid[0]) + toHex(normal.uid.uid[1]);
+
+    gen1restore::Options options;
+    options.root = gen1recomp::ROOT;
+    options.downloadPath = "sdmc:/uNSS/restore-gen1";
+    options.syncStatePath = accountStage + "/.syncstate.gen1";
+    options.accountName = normal.nickname;
+    options.serverUrl = normal.serverUrl;
+
+    auto work = [=](std::function<void(const std::string&)> log) -> int
+    {
+        return gen1restore::restoreLatest(options, log);
+    };
+
+    App::instance().pushScreen(new ConfirmScreen("Restore Gen1Recomp?", {
+        "This replaces active Gen1 saves and options.",
+        "Current files are kept as *.before-unss-restore.",
+        "Do not power off while the restore is running."
+    }, [work]() mutable
+    {
+        App::instance().pushScreen(
+            new ProgressScreen("Restore Gen1Recomp", std::move(work)));
+    }));
 }
 
 } // namespace gui
